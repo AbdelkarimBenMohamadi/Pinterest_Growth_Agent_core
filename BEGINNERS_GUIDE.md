@@ -89,6 +89,9 @@ The robot wakes up! You'll see text popping up on your screen. The robot is look
 
 *(Note: The robot is smart—it knows a brand new account shouldn't post 100 times a day, so it will only post a little bit at first, and slowly post more as it grows older).*
 
+> **💡 Want to test it right now?** 
+> If you don't want to wait for the schedule and just want to see the robot make exactly **one post immediately**, you can double-click the **`test_one_post.bat`** file instead!
+
 ---
 
 ## 📊 Step 6: Checking the Robot's Work

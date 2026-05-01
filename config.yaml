@@ -1,0 +1,72 @@
+# Account
+account:
+  created_date: "2026-04-24" # Date the Pinterest account was created (for warming schedule)
+
+# Browser
+browser:
+  session_file: "data/pinterest_session.json" # Playwright session (auto-managed)
+  chrome_profile_path: "C:\\Users\\Ultra\\AppData\\Local\\Google\\Chrome\\User Data\\Profile 6"
+  headless: false # false = headful (recommended for debugging)
+
+# Niche Configuration
+niche:
+  seed_keywords:
+    - "Islamic Reminders"
+    - "Dhikr and Dua"
+    - "Tawheed Allah"
+    - "Istighfar Benefits"
+    - "Morning Azkar"
+    - "Night Azkar"
+  categories:
+    - "Islam"
+    - "Islamic Reminders"
+
+# Posting Schedule
+schedule:
+  start_hour: 8 # Hour to run daily cycle (24h format)
+  timezone: "US/Eastern"
+  peak_hours: [10, 14, 18, 20] # Hours in 24h format
+  interval_min_minutes: 15 # Minimum gap between posts
+  interval_max_minutes: 45 # Maximum gap between posts
+
+# Posting Destination Link
+posting:
+  destination_link_mode: "both" # none | description_only | destination_link | both
+  default_destination_link: "https://www.youtube.com/@amerelshamy2406" # e.g. https://yoursite.com
+
+# AI Configuration
+ai:
+  text_provider: "groq" # Uses OpenAI-compatible API (openai library)
+  text_model: "llama-3.3-70b-versatile" # Groq model for metadata + quality gate
+  image_provider: "pollinations" # Free, no API key needed
+  max_images_per_day: 15 # Hard cap on image generation calls
+  max_retries: 2 # Max regeneration attempts per pin
+
+# Safety & Anti-Detection
+safety:
+  proxy_rotation_hours: 3 # Rotate proxy every N hours
+  cooldown_hours: 48 # Cooldown duration after shadowban
+  enable_shadowban_check: true # Check pin visibility 24h after posting
+
+# Content Strategy
+strategy:
+  seo_percent: 70 # % of daily pins from SEO keywords
+  trend_percent: 30 # % of daily pins from trending topics
+  trend_boost_threshold: 2.0 # If trend velocity > this, boost trends to 50%
+
+# Local Image Generation (ComfyUI)
+comfyui:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8188
+  model: "sd_xl_base_1.0.safetensors"
+  install_path: "C:\\Users\\Ultra\\Downloads\\ComfyUI_main"
+
+# Cost Limits
+limits:
+  max_api_cost_per_day: 0.00 # $0 — both Groq and Pollinations have free tiers
+
+# Paths (relative to project root)
+paths:
+  assets_dir: "assets"
+  database: "data/pga.db"

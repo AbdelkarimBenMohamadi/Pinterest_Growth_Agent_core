@@ -1,0 +1,4 @@
+# List the things you want the AI image generator to AVOID here.
+# Separate items with commas. This file is read automatically before every image generation.
+
+people, person, woman, man, female, male, face, humans, text, letters, watermark, signature, ugly, bad proportions, bad anatomy, blur

@@ -5,7 +5,7 @@ account:
 # Browser
 browser:
   session_file: "data/pinterest_session.json" # Playwright session (auto-managed)
-  chrome_profile_path: "C:\\Users\\Ultra\\AppData\\Local\\Google\\Chrome\\User Data\\Profile 6"
+  chrome_profile_path: "" # Optional: Path to custom Chrome profile (leave empty to use .env credentials)
   headless: false # false = headful (recommended for debugging)
 
 # Niche Configuration
@@ -56,11 +56,11 @@ strategy:
 
 # Local Image Generation (ComfyUI)
 comfyui:
-  enabled: true
+  enabled: false
   host: "127.0.0.1"
   port: 8188
   model: "sd_xl_base_1.0.safetensors"
-  install_path: "C:\\Users\\Ultra\\Downloads\\ComfyUI_main"
+  install_path: "" # Optional: Path to ComfyUI installation if enabled
 
 # Cost Limits
 limits:

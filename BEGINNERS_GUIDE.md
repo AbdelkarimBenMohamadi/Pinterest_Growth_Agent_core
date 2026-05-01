@@ -1,132 +1,314 @@
-# 🚀 Pinterest Growth Agent: Zero to Hero Beginner's Guide!
+# Beginner's Guide to Pinterest Growth Agent
 
-Welcome! Imagine you have a super-smart robot assistant. You tell this robot, "Hey, I want to be famous for pictures of cute cats on Pinterest." The robot nods, goes to the internet to find out what kind of cat pictures people love the most right now, draws those pictures, writes a catchy title for them, and then logs into your Pinterest to post them for you. It does this every day while you sleep or play games!
-
-This guide will teach you how to set up your own robot (we call it the **Pinterest Growth Agent** or **PGA**). Because we have built a "magic button" for you, you don't need to know anything about coding to set this up!
+> **Welcome!** This guide walks you through every step from downloading the project to your first successful pin post. No technical knowledge required.
 
 ---
 
-## 🛠️ Step 1: Getting Your Tools Ready
+## What Is This Tool?
 
-Before you build a robot, you need to grab three free things from the internet:
+Pinterest Growth Agent (PGA) is an AI-powered bot that automatically:
+- Finds what people are searching for on Pinterest
+- Creates beautiful pin images using AI
+- Writes SEO-optimized titles and descriptions
+- Posts pins to your Pinterest account on a schedule
+- Learns which keywords perform best and does more of what works
 
-### 1. Python (The Robot's Engine)
-Python is a language that computers understand. We need it to run our robot.
-- **Go to:** [python.org/downloads](https://www.python.org/downloads/)
-- Click the big yellow button to download the latest version for your computer.
-- **⚠️ VERY IMPORTANT:** When you run the installer, look at the very bottom of the first screen. There is a little checkbox that says **"Add Python to PATH"**. You **MUST** check that box before clicking "Install Now". If you forget, the robot won't wake up!
-
-### 2. Node.js (The Robot's Hands)
-Node.js gives our robot the tools it needs to safely interact with websites.
-- **Go to:** [nodejs.org](https://nodejs.org/en/)
-- Download and install the one that says **"LTS"** (which means it's the most stable).
-
-### 3. Groq API Key (The Robot's Brain Juice)
-Our robot uses artificial intelligence (AI) to think of smart titles and words for your pins. Groq is a super-fast AI, and it gives us a free "key" to use it.
-- **Go to:** [console.groq.com](https://console.groq.com/)
-- Sign in with your Google account.
-- Click on **API Keys** on the left menu, then click **Create API Key**.
-- Give it a name (like "My Pinterest Robot") and copy the long secret code it gives you. **Don't lose this code!** Paste it somewhere safe for now.
+Think of it as having a 24/7 Pinterest assistant that never sleeps.
 
 ---
 
-## 📥 Step 2: Download the Robot
+## Before You Start
 
-1. Go to the GitHub page where this project lives.
-2. Click the big green **"Code"** button near the top right.
-3. Click **"Download ZIP"**.
-4. Once it downloads, right-click the ZIP file and choose **"Extract All..."**. Extract it to your Desktop so it's easy to find.
-5. Open the folder you just extracted. It should be called `Pinterest_Growth_Agent_core-main`.
+### What You'll Need
 
----
+| Requirement | What It Is | Where to Get It |
+|---|---|---|
+| Python 3.11+ | The programming language the tool runs on | [python.org](https://www.python.org/downloads/) |
+| A Pinterest account | Your Pinterest profile | [pinterest.com](https://www.pinterest.com) |
+| A Groq API key | Free AI key for generating text | [console.groq.com](https://console.groq.com) (free, no credit card) |
 
-## 🪄 Step 3: The Magic Setup Button
+### Supported Operating Systems
 
-This used to be the hard part, but we made it incredibly easy for you!
-
-1. Look inside your robot folder for a file called **`start_windows.bat`**.
-2. **Double-click it!** 
-3. A black window will open. This is normal! The script is automatically building the robot's house, installing all its parts, and downloading its browser. (This might take 1 to 2 minutes, so just let it work).
-4. Once it finishes installing, it will ask you for your keys right there in the window!
-   - It will ask for your **Groq API Key**. (Paste the secret code you saved earlier and hit Enter).
-   - It will ask for your **Pinterest Email**.
-   - It will ask for your **Pinterest Password**.
-5. The window will then ask: *"Do you want to wake up the robot right now? (Y/N)"*. 
-   - Type **N** and press Enter for now. We have one more quick thing to do!
-
-*(Don't worry, these secrets stay locked on your computer. The robot never shares them with anyone).*
+- **Windows 10/11** — Full support, all batch files work as-is
+- **macOS / Linux** — Use the manual commands in the README instead of batch files
 
 ---
 
-## 🎨 Step 4: Teaching the Robot Your Niche
+## Step-by-Step Installation
 
-Now you have to tell the robot what kind of pictures to make. 
+### Step 1: Download the Project
 
-1. Inside your folder, look for a file called **`config.yaml`**. Right-click it and open it with **Notepad**.
-2. Find the part that says `niche:`. This is where you tell the robot your topic!
-3. Change the `seed_keywords` to whatever you want. For example, if you want a cooking account, you could write:
-   ```yaml
-   niche:
-     seed_keywords:
-       - "easy dinner recipes"
-       - "healthy snacks"
-       - "baking for beginners"
-   ```
-4. Save the file and close Notepad!
+Download the project folder to your computer and extract it if it came as a ZIP file. Keep the folder in an easy-to-find location like your Desktop.
+
+### Step 2: Run the Setup Wizard
+
+Double-click **`01-install.bat`**
+
+This will automatically:
+- Create a Python virtual environment (keeps things organized)
+- Install all required Python packages
+- Install the Chromium browser (used for Pinterest automation)
+- Create a `.env` file and open it in Notepad for you to fill in
+
+The setup window will tell you when it's complete. It takes about 3-5 minutes on a fast connection.
+
+### Step 3: Get Your Free Groq API Key
+
+1. Open [console.groq.com](https://console.groq.com) in your browser
+2. Sign up for a free account (or log in)
+3. Click **"API Keys"** in the sidebar
+4. Click **"Create API Key"**
+5. Give it any name (e.g., "Pinterest Agent")
+6. Copy the key — it looks like `gsk_xxxxxxxxxxxxxxxxxxxxxx`
+
+### Step 4: Fill In Your `.env` File
+
+The setup wizard opened Notepad with your `.env` file. It should look like this:
+
+```env
+# Pinterest Login Credentials (required if session state doesn't exist)
+PINTEREST_EMAIL=your_pinterest_email@example.com
+PINTEREST_PASSWORD=your_pinterest_password
+
+# Groq API (free at console.groq.com)
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxx
+
+# Image generation fallback (optional — leave blank for now)
+TOGETHER_API_KEY=
+HF_API_KEY=
+```
+
+Fill in:
+- `PINTEREST_EMAIL` — the email you use to log into Pinterest
+- `PINTEREST_PASSWORD` — your Pinterest password
+- `GROQ_API_KEY` — paste your key from Step 3
+
+**Important:** You can leave `TOGETHER_API_KEY` and `HF_API_KEY` blank. These are backup image providers and are not required.
+
+Save the file and close Notepad.
+
+### Step 5: Configure Your Niche
+
+Open `config.yaml` in any text editor (double-click it). This tells the agent what topics to post about.
+
+Find the `niche` section and replace the example keywords with your own:
+
+```yaml
+# Example for Islamic content:
+niche:
+  seed_keywords:
+    - "Islamic Reminders"
+    - "Morning Azkar"
+    - "Tawheed Allah"
+    - "Istighfar Benefits"
+  categories:
+    - "Islam"
+    - "Islamic Reminders"
+
+# Example for Home Decor:
+niche:
+  seed_keywords:
+    - "Modern living room ideas"
+    - "Minimalist home decor"
+    - "Cozy bedroom design"
+  categories:
+    - "Home Decor"
+    - "Interior Design"
+```
+
+**Choose topics you actually want to post about.** The agent will find related search terms automatically.
+
+### Step 6: Validate Everything
+
+Double-click **`02-validate.bat`**
+
+This checks:
+- Python is installed correctly
+- All packages are installed
+- Your Chromium browser is ready
+- Your `.env` file has all the required keys
+
+If any check fails, the tool will tell you exactly what's wrong and how to fix it.
+
+### Step 7: Run Your First Cycle
+
+Double-click **`03-test-mode.bat`**
+
+> Use this instead of `04-run-once.bat` for your first test — it bypasses safety limits so you can see the full posting process without worrying about daily caps.
+
+This runs one complete cycle immediately so you can see what happens:
+1. **Research** — Scrapes Pinterest for keywords and trends
+2. **Generate** — Creates AI images and metadata
+3. **Post** — Publishes pins to your Pinterest account
+4. **Analyze** — Checks how your pins performed
+
+You'll see colored output in the window as each step completes. A detailed report appears at the end showing:
+- How many keywords were found
+- How many pins were posted
+- Any errors or warnings
+
+This first run may take 5-10 minutes since it has to generate images and log into Pinterest.
+
+**After your first test**, use `04-run-once.bat` for normal on-demand runs — it respects safety limits.
 
 ---
 
-## ⏰ Step 5: Waking Up the Robot
+## Understanding the Batch Files
 
-Everything is ready! You can now turn the robot on whenever you want.
-
-1. **Double-click `start_windows.bat`** again.
-2. Because it's already set up, it will skip the installation and go straight to: *"Do you want to wake up the robot right now? (Y/N)"*
-3. Type **Y** and hit Enter!
-
-**What happens now?**
-The robot wakes up! You'll see text popping up on your screen. The robot is looking at Pinterest, thinking of ideas, drawing pictures, and scheduling them. 
-
-*(Note: The robot is smart—it knows a brand new account shouldn't post 100 times a day, so it will only post a little bit at first, and slowly post more as it grows older).*
-
-> **💡 Want to test it right now?** 
-> If you don't want to wait for the schedule and just want to see the robot make exactly **one post immediately**, you can double-click the **`test_one_post.bat`** file instead!
+| File | When to Use It |
+|---|---|
+| **`01-install.bat`** | Run once when you first download the project |
+| **`02-validate.bat`** | Run before each session to make sure everything is working |
+| **`04-run-once.bat`** | Normal on-demand cycle — respects safety limits |
+| **`03-test-mode.bat`** | **Full force test** — bypasses limits for testing and debugging |
+| **`06-start-scheduler.bat`** | Start the daily scheduler (runs in background, use this for continuous posting) |
+| **`05-status.bat`** | Check your stats — keywords, pins posted, engagement |
 
 ---
 
-## 📊 Step 6: Checking the Robot's Work
+## How the Daily Schedule Works
 
-Want to see all the awesome things your robot is doing? It has a built-in website just for you!
+When you run `06-start-scheduler.bat`, the agent starts a background scheduler that runs once per day at the hour specified in `config.yaml`.
 
-1. Open your computer's terminal: Click your Windows Start button, type **`cmd`**, and hit Enter.
-2. Drag and drop your robot folder into the black window, but type `cd ` (with a space) before it. It should look like this: `cd C:\Users\YourName\Desktop\Pinterest_Growth_Agent_core-main`. Press Enter.
-3. Step inside the robot's bubble by typing: `venv\Scripts\activate` and press Enter.
-4. Type this command to launch your dashboard:
-   ```bash
-   python -m src.main dashboard
-   ```
-5. Open your web browser (like Chrome or Safari) and go to `http://localhost:3000`.
+**Default schedule** (in `config.yaml`):
+```yaml
+schedule:
+  start_hour: 8        # Runs at 8:00 AM (your local time, see timezone below)
+  peak_hours: [10, 14, 18, 20]  # Pin posting distributed across these hours
+  timezone: "US/Eastern"
+```
 
-You will see a beautiful dashboard showing you exactly what pictures the robot made, what keywords are popular, and how many people are looking at your pins!
+**Account Safety Limits** — The agent limits how many pins it posts based on account age to avoid bans:
 
----
+| Account Age | Max Pins/Day | Max Total Actions |
+|---|---|---|
+| Days 1-7 | 1 pin | 10 |
+| Days 8-14 | 2 pins | 20 |
+| Days 15-30 | 5 pins | 40 |
+| 31+ days | 8 pins | 60 |
 
-## 👯‍♂️ Step 7: Running Multiple Accounts (Advanced)
-
-Even though our robot is built to run only one account at a time (to keep it simple and safe), there is a very easy trick to run multiple accounts. We call it the **"Folder Duplication" Method**!
-
-1. **Copy the Robot's House:**
-   Right now, your robot lives in the `Pinterest_Growth_Agent_core-main` folder. Simply copy and paste that entire folder for as many accounts as you have! Rename the folders so you don't get confused (for example: `Robot_Cats`, `Robot_Dogs`).
-2. **Give Them Their Own Keys:**
-   Go into each new folder. You will see an `.env` file that was created. Open it in Notepad and change the email and password for that specific account.
-3. **Change the Keywords:**
-   Open the `config.yaml` file in the new folder and change the niche keywords.
-4. **⚠️ VERY IMPORTANT: Use Proxies!**
-   If you run 3 robots from the exact same Wi-Fi address, Pinterest might ban you. To protect your robots, open the `config.yaml` in each folder, find the `safety:` section, and add a different Residential Proxy URL to `proxy_url:`. This makes Pinterest think one robot is in New York and the other is in Texas!
-5. **Wake Them All Up:**
-   Just double-click the `start_windows.bat` file inside each folder!
+These limits are applied automatically based on the `account.created_date` you set in `config.yaml`.
 
 ---
 
-🎉 **CONGRATULATIONS!** 🎉
-You just built your own AI-powered Pinterest Growth Agent! You can now let the robot run in the background while you go do fun stuff. Check back on the dashboard every few days to watch your numbers grow!
+## Understanding the Output
+
+### What the Colors Mean
+
+- **Green** — Success
+- **Yellow/Orange** — Warning (something unexpected but the agent handled it)
+- **Red** — Error (the agent will try to recover or skip)
+- **Cyan/Magenta** — Information / research data
+
+### Key Terms
+
+| Term | Meaning |
+|---|---|
+| **Keyword** | A search term the agent found on Pinterest |
+| **Content Brief** | A plan for one pin (keyword + content type) |
+| **Board** | A Pinterest board (like a folder) where pins are saved |
+| **Engagement** | How people interact with your pins — saves, clicks |
+| **CTR** | Click-Through Rate — % of people who clicked your pin |
+| **Save Rate** | % of people who saved your pin to their board |
+| **Cooldown** | Safety mode — the agent stops posting temporarily |
+| **Shadowban** | When Pinterest hides your pins from search |
+
+---
+
+## Troubleshooting
+
+### "Python not found" during setup
+- Install Python 3.11+ from [python.org](https://www.python.org/downloads/)
+- Make sure to check "Add Python to PATH" during installation
+- Restart your computer after installing Python
+
+### "GROQ_API_KEY not set" error
+- Open `.env` in Notepad
+- Make sure you pasted your key correctly (no extra spaces)
+- The key should start with `gsk_`
+
+### Pin posted but I can't see it on Pinterest
+- Wait 5 minutes — Pinterest can be slow to update
+- Try refreshing your Pinterest profile
+- Check if the pin was saved to a different board than expected
+- Run `05-status.bat` to see the logged URL
+
+### Agent stopped or crashed
+- Check the error message at the bottom of the window
+- Most errors are temporary (internet hiccup, Pinterest is busy)
+- Just run `04-run-once.bat` again to continue
+
+### "Session not valid" / Login failed
+- Delete `data/pinterest_session.json` and run again
+- Make sure your Pinterest email and password are correct in `.env`
+- Pinterest may require email verification on first login from a new device
+
+### Too many failures in validate.bat
+- Make sure you ran `01-install.bat` successfully
+- Try running `01-install.bat` again
+- Check that your internet connection is working
+
+---
+
+## Frequently Asked Questions
+
+**Q: Will this get my Pinterest account banned?**
+A: The agent is designed with safety limits and uses browser automation that mimics real user behavior. It will never post more pins than your account age allows. It also detects shadowbans and enters cooldown mode automatically.
+
+**Q: How many pins will it post per day?**
+A: Based on the warming schedule, between 1-8 pins per day depending on how old your account is. Older accounts can post more.
+
+**Q: Do I need to keep my computer on?**
+A: Yes — the agent runs on your computer. If you close the window, the scheduler stops. For 24/7 operation, consider running on a always-on device like a Raspberry Pi or a cloud VPS.
+
+**Q: Can I use my own ComfyUI for image generation?**
+A: Yes! Set `comfyui.enabled: true` in `config.yaml` and fill in the `host`, `port`, and `model` settings. ComfyUI must be running locally for this to work.
+
+**Q: Can I change the posting schedule?**
+A: Yes — edit `config.yaml`. Change `peak_hours` to the hours you want pins posted, and `timezone` to your local timezone.
+
+**Q: What is the difference between 04-run-once.bat and 03-test-mode.bat?**
+A: `04-run-once.bat` respects safety limits — use it for normal daily use. `03-test-mode.bat` bypasses limits — use it only for testing when setting up or debugging. Never use the force mode repeatedly on a live Pinterest account.
+
+**Q: My first test posted 0 pins. Why?**
+A: You may have hit a daily limit. Check the cycle report — it shows why pins weren't posted. New accounts (days 1-7) can only post 1 pin per day. Use `03-test-mode.bat` if you need to test the full posting flow without limits.
+
+**Q: What happens if a keyword is repeated?**
+A: The agent tracks which keywords have been used and prioritizes fresh keywords. Duplicate images are detected by hash and regenerated automatically.
+
+---
+
+## Files and Folders
+
+```
+pinterest-growth-agent/
+├── 01-install.bat           ← Run this FIRST
+├── 02-validate.bat         ← Check setup before running
+├── 03-test-mode.bat         ← First time test (bypasses limits)
+├── 04-run-once.bat         ← Normal on-demand cycle
+├── 05-status.bat           ← View stats
+├── 06-start-scheduler.bat  ← Start daily scheduler
+├── config.yaml             ← Your settings (edit this!)
+├── .env                    ← Your API keys (created by setup)
+├── .env.example            ← Template for .env
+├── data/                   ← Database and session files (auto-created)
+├── assets/                 ← Generated images (auto-created)
+├── src/                    ← The actual agent code (don't edit)
+├── BEGINNERS_GUIDE.md      ← You are here!
+└── README.md               ← Technical documentation
+```
+
+---
+
+## Getting Help
+
+If something isn't working:
+
+1. **Run `02-validate.bat`** first — it catches most setup issues
+2. Check the **Troubleshooting** section above
+3. Look at the detailed report in `data/cycle_report.log` after a run
+4. Search for your error message online — it's likely a known issue with a fix
+
+---
+
+*Happy Pinning!*

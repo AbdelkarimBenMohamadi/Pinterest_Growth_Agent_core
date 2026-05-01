@@ -13,7 +13,35 @@ Research → Generate → Post → Learn → Repeat (daily)
 3. **Post** — Publishes pins safely via Playwright with anti-detection
 4. **Learn** — Tracks performance and prioritizes what works
 
-## Quick Start
+---
+
+## Quick Start with Batch Files (Beginners)
+
+Double-click these files in order — no command line needed:
+
+| File | What It Does |
+|---|---|
+| **`01-install.bat`** | One-click install — Python environment, dependencies, Playwright |
+| **`02-validate.bat`** | Checks everything is ready before you run |
+| **`03-test-mode.bat`** | First-time test — does one full cycle, bypasses safety limits |
+| **`04-run-once.bat`** | Normal on-demand run — respects safety limits |
+| **`05-status.bat`** | View recent stats and keyword performance |
+| **`06-start-scheduler.bat`** | Start the daily scheduler — runs forever in background |
+
+### First Time Setup
+
+1. **Run `01-install.bat`** — This creates the environment and opens `.env` in Notepad
+2. **Fill in `.env`** — Add your `GROQ_API_KEY` (free at console.groq.com), `PINTEREST_EMAIL`, `PINTEREST_PASSWORD`
+3. **Edit `config.yaml`** — Set your `seed_keywords` (topics to post about) and `categories`
+4. **Run `02-validate.bat`** — Confirms everything is working
+5. **Run `03-test-mode.bat`** — Watch it do one full cycle without limits
+6. **Run `06-start-scheduler.bat`** — Start the daily scheduler
+
+For a full walkthrough, see [BEGINNERS_GUIDE.md](BEGINNERS_GUIDE.md).
+
+---
+
+## Manual Setup (Advanced)
 
 ### 1. Prerequisites
 - Python 3.11+
@@ -44,17 +72,14 @@ cp .env.example .env           # Edit with your API keys
 ### 3. Run
 
 ```bash
-# Start the agent
-python -m src.main run
+# Start the agent (daily scheduler)
+python -m src.main start
 
 # Run once (single cycle, no scheduling)
-python -m src.main run --once
-
-# Launch the web dashboard
-python -m src.main dashboard
+python -m src.main run-now
 
 # Check account status
-python -m src.main status
+python -m src.main stats
 ```
 
 ## Configuration
@@ -66,7 +91,7 @@ python -m src.main status
 
 ```
 src/
-├── main.py              # CLI entry point
+├── main.py              # CLI entry point (Typer + Rich)
 ├── orchestrator.py      # Daily loop controller
 ├── models.py            # Shared data models
 ├── brain/               # Research & keyword discovery
@@ -74,12 +99,14 @@ src/
 ├── worker/              # Pinterest posting + safety
 ├── analyzer/            # Performance tracking + learning
 ├── store/               # SQLite database
-├── dashboard/           # Reflex web dashboard (6 pages)
-└── utils/               # Config, logging
+├── diagnostic/          # AI-powered scraper self-healing
+├── report/              # Cycle reports (rich CLI + file)
+└── utils/               # Config, logging, constants
 ```
 
 ## Docs
 
+- [BEGINNERS_GUIDE.md](BEGINNERS_GUIDE.md) — Step-by-step walkthrough for new users
 - [PRD](prd.md) — What this project does and why
 - [Spec](spec.md) — Technical specification and architecture
-- [Agent Instructions](AGENTS.md) — Rules for AI agents building this project
+- [AGENTS.md](AGENTS.md) — Rules for AI agents building this project

@@ -277,7 +277,7 @@ pinterest-growth-agent/
 ├── data/                   ← قاعدة البيانات وجلسة العمل
 ├── assets/                 ← الصور المنشأة بالذكاء الاصطناعي
 ├── src/                    ← الكود البرمجي للبوت (لا تقم بتعديله)
-├── BEGINNERS_GUIDE.md      ← دليل المبتدئين بالإنجليزية
+├── BEGINNERS_GUIDE_EN.md   ← دليل المبتدئين بالإنجليزية
 └── BEGINNERS_GUIDE_AR.md   ← أنت هنا!
 ```
 

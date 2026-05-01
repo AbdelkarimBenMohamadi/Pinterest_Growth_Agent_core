@@ -80,6 +80,6 @@ echo.
 echo  STEP 4 - Start the agent:
 echo    Run: 06-start-scheduler.bat
 echo.
-echo  Need help? Open BEGINNERS_GUIDE.md
+echo  Need help? Open BEGINNERS_GUIDE_EN.md
 echo.
 pause

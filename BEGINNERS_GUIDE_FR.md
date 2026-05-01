@@ -277,7 +277,7 @@ pinterest-growth-agent/
 ├── data/                   ← Base de données et fichiers de session
 ├── assets/                 ← Images générées par l'IA
 ├── src/                    ← Le code de l'agent (ne pas modifier)
-├── BEGINNERS_GUIDE.md      ← Guide du débutant en anglais
+├── BEGINNERS_GUIDE_EN.md   ← Guide du débutant en anglais
 ├── BEGINNERS_GUIDE_AR.md   ← Guide du débutant en arabe
 └── BEGINNERS_GUIDE_FR.md   ← Vous êtes ici !
 ```

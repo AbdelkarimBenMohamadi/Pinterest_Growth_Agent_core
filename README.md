@@ -37,7 +37,7 @@ Double-click these files in order — no command line needed:
 5. **Run `03-test-mode.bat`** — Watch it do one full cycle without limits
 6. **Run `06-start-scheduler.bat`** — Start the daily scheduler
 
-For a full walkthrough, see [BEGINNERS_GUIDE.md](BEGINNERS_GUIDE.md).
+For a full walkthrough, see [BEGINNERS_GUIDE_EN.md](BEGINNERS_GUIDE_EN.md).
 
 ---
 
@@ -106,7 +106,9 @@ src/
 
 ## Docs
 
-- [BEGINNERS_GUIDE.md](BEGINNERS_GUIDE.md) — Step-by-step walkthrough for new users
+- [BEGINNERS_GUIDE_EN.md](BEGINNERS_GUIDE_EN.md) — Step-by-step walkthrough for new users
+- [BEGINNERS_GUIDE_AR.md](BEGINNERS_GUIDE_AR.md) — دليل المبتدئين باللغة العربية
+- [BEGINNERS_GUIDE_FR.md](BEGINNERS_GUIDE_FR.md) — Guide du débutant en français
 - [PRD](prd.md) — What this project does and why
 - [Spec](spec.md) — Technical specification and architecture
 - [AGENTS.md](AGENTS.md) — Rules for AI agents building this project

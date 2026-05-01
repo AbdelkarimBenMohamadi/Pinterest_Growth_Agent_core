@@ -294,7 +294,7 @@ pinterest-growth-agent/
 ├── data/                   ← Database and session files (auto-created)
 ├── assets/                 ← Generated images (auto-created)
 ├── src/                    ← The actual agent code (don't edit)
-├── BEGINNERS_GUIDE.md      ← You are here!
+├── BEGINNERS_GUIDE_EN.md   ← You are here!
 └── README.md               ← Technical documentation
 ```
 

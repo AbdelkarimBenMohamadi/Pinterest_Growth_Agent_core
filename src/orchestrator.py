@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone as tz
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from src.store.database import Database
 from src.utils.config import load_config, get_posting_config
@@ -334,7 +334,7 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
 
 def start_scheduler(config: dict) -> None:
     """Start APScheduler with the daily cycle."""
-    scheduler = AsyncIOScheduler()
+    scheduler = BackgroundScheduler(timezone=config.get("schedule", {}).get("timezone", "UTC"))
     db = Database(config["paths"]["database"])
     db.initialize()
 
@@ -349,10 +349,9 @@ def start_scheduler(config: dict) -> None:
     scheduler.start()
     logger.info(f"Scheduler started. Daily cycle runs at {start_hour:02d}:00.")
 
-    loop = asyncio.new_event_loop()
     try:
-        loop.run_forever()
+        while True:
+            pass
     except KeyboardInterrupt:
         logger.info("Shutting down scheduler...")
         scheduler.shutdown()
-        loop.close()

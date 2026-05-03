@@ -35,6 +35,7 @@ posting:
   default_destination_link: "https://www.youtube.com/@amerelshamy2406" # e.g. https://yoursite.com
 
 # AI Configuration
+
 ai:
   text_provider: "groq" # Uses OpenAI-compatible API (openai library)
   text_model: "llama-3.3-70b-versatile" # Groq model for metadata + quality gate

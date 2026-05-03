@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone as tz
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -351,7 +352,7 @@ def start_scheduler(config: dict) -> None:
 
     try:
         while True:
-            pass
+            time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Shutting down scheduler...")
         scheduler.shutdown()

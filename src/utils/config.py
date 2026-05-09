@@ -91,6 +91,34 @@ def get_pinterest_credentials() -> tuple[str, str]:
     return email, password
 
 
+def get_facebook_credentials() -> tuple[str, str]:
+    """Return (email, password) from environment. Raises ValueError if missing."""
+    email = os.getenv("FACEBOOK_EMAIL", "")
+    password = os.getenv("FACEBOOK_PASSWORD", "")
+    if not email or not password:
+        raise ValueError("FACEBOOK_EMAIL and FACEBOOK_PASSWORD must be set in .env")
+    return email, password
+
+
+def has_facebook_credentials() -> bool:
+    """Check if Facebook credentials are set."""
+    return bool(os.getenv("FACEBOOK_EMAIL") and os.getenv("FACEBOOK_PASSWORD"))
+
+
+def get_instagram_credentials() -> tuple[str, str]:
+    """Return (username, password) from environment. Raises ValueError if missing."""
+    username = os.getenv("INSTAGRAM_USERNAME", "")
+    password = os.getenv("INSTAGRAM_PASSWORD", "")
+    if not username or not password:
+        raise ValueError("INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD must be set in .env")
+    return username, password
+
+
+def has_instagram_credentials() -> bool:
+    """Check if Instagram credentials are set."""
+    return bool(os.getenv("INSTAGRAM_USERNAME") and os.getenv("INSTAGRAM_PASSWORD"))
+
+
 def get_together_api_key() -> str:
     """Get TOGETHER_API_KEY from environment. Returns empty string if not set."""
     return os.getenv("TOGETHER_API_KEY", "")

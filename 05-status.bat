@@ -3,7 +3,7 @@ cd /d "%~dp0"
 
 echo.
 echo  ╔══════════════════════════════════════════════════════╗
-echo  ║     Pinterest Growth Agent - Status Dashboard       ║
+echo  ║     Social Media Growth Agent - Status Dashboard    ║
 echo  ╚══════════════════════════════════════════════════════╝
 echo.
 

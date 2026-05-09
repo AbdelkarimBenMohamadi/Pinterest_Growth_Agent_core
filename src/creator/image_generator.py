@@ -2,10 +2,78 @@ import httpx
 import hashlib
 import logging
 import urllib.parse
+import textwrap
 from pathlib import Path
 from src.models import ContentBrief
 
 logger = logging.getLogger(__name__)
+
+
+def _add_text_overlay(image_bytes: bytes, text: str, config: dict) -> bytes:
+    """Add text overlay to the image for better engagement."""
+    overlay_cfg = config.get("ai", {}).get("text_overlay", {})
+    if not overlay_cfg.get("enabled", False):
+        return image_bytes
+
+    from io import BytesIO
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        logger.warning("Pillow library not found. Skipping text overlay.")
+        return image_bytes
+
+    try:
+        img = Image.open(BytesIO(image_bytes))
+        draw = ImageDraw.Draw(img)
+        width, height = img.size
+
+        font_path = overlay_cfg.get("font_path", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+        font_size = overlay_cfg.get("font_size", 60)
+
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+        except Exception:
+            logger.warning(f"Could not load font at {font_path}, using default.")
+            font = ImageFont.load_default()
+
+        # Wrap text
+        wrapper = textwrap.TextWrapper(width=20) # Approx chars per line
+        lines = wrapper.wrap(text=text)
+
+        color = overlay_cfg.get("color", "white")
+        shadow_color = overlay_cfg.get("shadow_color", "black")
+        position = overlay_cfg.get("position", "bottom")
+
+        # Calculate total height of text block
+        line_heights = [draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1] for line in lines]
+        total_text_height = sum(line_heights) + (len(lines) - 1) * 10
+
+        if position == "top":
+            current_y = 50
+        elif position == "middle":
+            current_y = (height - total_text_height) // 2
+        else: # bottom
+            current_y = height - total_text_height - 100
+
+        for line in lines:
+            # Draw shadow/outline
+            bbox = draw.textbbox((0, 0), line, font=font)
+            line_width = bbox[2] - bbox[0]
+            x = (width - line_width) // 2
+
+            # Simple shadow
+            draw.text((x+2, current_y+2), line, font=font, fill=shadow_color)
+            # Main text
+            draw.text((x, current_y), line, font=font, fill=color)
+
+            current_y += draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1] + 10
+
+        output = BytesIO()
+        img.save(output, format="PNG")
+        return output.getvalue()
+    except Exception as e:
+        logger.error(f"Failed to add text overlay: {e}")
+        return image_bytes
 
 
 def _get_negative_prompts() -> str:
@@ -61,6 +129,11 @@ async def generate_image(brief: ContentBrief, config: dict, retry: bool = False)
     assets_dir = Path(config.get("paths", {}).get("assets_dir", "assets"))
     assets_dir.mkdir(parents=True, exist_ok=True)
     image_path = str(assets_dir / f"{image_hash}.png")
+
+    # Add text overlay if enabled
+    if not retry: # Only add text to the original, maybe skip for retries or use different logic
+        overlay_text = brief.target_keyword.upper()
+        image_bytes = _add_text_overlay(image_bytes, overlay_text, config)
 
     Path(image_path).write_bytes(image_bytes)
     logger.info(f"Generated image: {image_path}")

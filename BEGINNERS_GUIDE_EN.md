@@ -1,19 +1,18 @@
-# Beginner's Guide to Pinterest Growth Agent
+# Beginner's Guide to Social Media Growth Agent (PGA)
 
-> **Welcome!** This guide walks you through every step from downloading the project to your first successful pin post. No technical knowledge required.
+> **Welcome!** This guide walks you through every step from downloading the project to your first successful post on Pinterest, Facebook, and Instagram. No technical knowledge required.
 
 ---
 
 ## What Is This Tool?
 
-Pinterest Growth Agent (PGA) is an AI-powered bot that automatically:
-- Finds what people are searching for on Pinterest
-- Creates beautiful pin images using AI
-- Writes SEO-optimized titles and descriptions
-- Posts pins to your Pinterest account on a schedule
-- Learns which keywords perform best and does more of what works
+Social Media Growth Agent (PGA) is an AI-powered bot that automatically:
+- Finds what people are searching for on social media (Pinterest, Facebook, Instagram)
+- Creates beautiful images and engaging captions using AI
+- Posts content to your accounts on a safe schedule
+- Learns which content performs best and improves over time
 
-Think of it as having a 24/7 Pinterest assistant that never sleeps.
+Think of it as having a 24/7 personal assistant for your social accounts that never sleeps.
 
 ---
 
@@ -24,7 +23,7 @@ Think of it as having a 24/7 Pinterest assistant that never sleeps.
 | Requirement | What It Is | Where to Get It |
 |---|---|---|
 | Python 3.11+ | The programming language the tool runs on | [python.org](https://www.python.org/downloads/) |
-| A Pinterest account | Your Pinterest profile | [pinterest.com](https://www.pinterest.com) |
+| Social Accounts | Your Pinterest, Facebook, or Instagram profile | The respective platforms |
 | A Groq API key | Free AI key for generating text | [console.groq.com](https://console.groq.com) (free, no credit card) |
 
 ### Supported Operating Systems
@@ -63,25 +62,26 @@ The setup window will tell you when it's complete. It takes about 3-5 minutes on
 
 ### Step 4: Fill In Your `.env` File
 
-The setup wizard opened Notepad with your `.env` file. It should look like this:
+The setup wizard opened Notepad with your `.env` file. Fill in your credentials:
 
 ```env
-# Pinterest Login Credentials (required if session state doesn't exist)
-PINTEREST_EMAIL=your_pinterest_email@example.com
-PINTEREST_PASSWORD=your_pinterest_password
+# Pinterest Credentials
+PINTEREST_EMAIL=your_email@example.com
+PINTEREST_PASSWORD=your_password
 
-# Groq API (free at console.groq.com)
+# Facebook Credentials
+FACEBOOK_EMAIL=your_email@example.com
+FACEBOOK_PASSWORD=your_password
+
+# Instagram Credentials
+INSTAGRAM_USERNAME=your_username
+INSTAGRAM_PASSWORD=your_password
+
+# Groq API
 GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxx
-
-# Image generation fallback (optional — leave blank for now)
-TOGETHER_API_KEY=
-HF_API_KEY=
 ```
 
-Fill in:
-- `PINTEREST_EMAIL` — the email you use to log into Pinterest
-- `PINTEREST_PASSWORD` — your Pinterest password
-- `GROQ_API_KEY` — paste your key from Step 3
+Only fill in the credentials for the platforms you want to use. If you only want Pinterest, you can leave Facebook and Instagram blank.
 
 **Important:** You can leave `TOGETHER_API_KEY` and `HF_API_KEY` blank. These are backup image providers and are not required.
 
@@ -150,6 +150,11 @@ You'll see colored output in the window as each step completes. A detailed repor
 This first run may take 5-10 minutes since it has to generate images and log into Pinterest.
 
 **After your first test**, use `04-run-once.bat` for normal on-demand runs — it respects safety limits.
+
+### Running Other Platforms Manually
+You can run the Facebook or Instagram agents immediately via the command line:
+- Facebook: `python -m src.main fb-run-now`
+- Instagram: `python -m src.main insta-run-now`
 
 ---
 

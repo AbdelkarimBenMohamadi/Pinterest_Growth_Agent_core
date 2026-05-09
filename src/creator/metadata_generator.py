@@ -28,8 +28,8 @@ Related terms: {brief.related_terms}
 Content type: {brief.content_type}
 
 Return JSON with these exact keys:
-- title: max 100 chars, keyword at start, click-worthy
-- description: max 500 chars, natural language, end with 3-5 hashtags
+- title: max 100 chars, keyword at start, click-worthy, use power words
+- description: max 500 chars, natural language, include a clear call-to-action, end with 3-5 hashtags
 - alt_text: max 500 chars, descriptive, keyword-rich
 - suggested_board: best board name for this pin
 - hashtags: list of 3-5 relevant hashtags"""}

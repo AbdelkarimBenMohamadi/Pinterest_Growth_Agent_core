@@ -1,6 +1,6 @@
-# Pinterest Growth Agent (PGA)
+# Social Media Growth Agent (PGA)
 
-An autonomous AI agent that grows your Pinterest account by finding high-demand keywords, generating optimized pins, and posting them safely — all on autopilot.
+An autonomous AI agent that grows your social media presence (Pinterest, Facebook, Instagram, Twitter) by finding high-demand keywords, generating optimized content, and posting safely — all on autopilot.
 
 ## How It Works
 
@@ -8,7 +8,7 @@ An autonomous AI agent that grows your Pinterest account by finding high-demand 
 Research → Generate → Post → Learn → Repeat (daily)
 ```
 
-1. **Research** — Scrapes Pinterest for trending topics and high-value keywords
+1. **Research** — Scrapes Pinterest, Facebook, Instagram, and Twitter for trending topics and high-value keywords
 2. **Generate** — Creates unique AI images + SEO-optimized metadata
 3. **Post** — Publishes pins safely via Playwright with anti-detection
 4. **Learn** — Tracks performance and prioritizes what works
@@ -31,7 +31,7 @@ Double-click these files in order — no command line needed:
 ### First Time Setup
 
 1. **Run `01-install.bat`** — This creates the environment and opens `.env` in Notepad
-2. **Fill in `.env`** — Add your `GROQ_API_KEY` (free at console.groq.com), `PINTEREST_EMAIL`, `PINTEREST_PASSWORD`
+2. **Fill in `.env`** — Add your `GROQ_API_KEY` (free at console.groq.com) and your credentials for Pinterest, Facebook, Instagram, or Twitter.
 3. **Edit `config.yaml`** — Set your `seed_keywords` (topics to post about) and `categories`
 4. **Run `02-validate.bat`** — Confirms everything is working
 5. **Run `03-test-mode.bat`** — Watch it do one full cycle without limits
@@ -72,11 +72,20 @@ cp .env.example .env           # Edit with your API keys
 ### 3. Run
 
 ```bash
-# Start the agent (daily scheduler)
+# Start the agent (daily scheduler for all platforms)
 python -m src.main start
 
-# Run once (single cycle, no scheduling)
+# Run once for Pinterest
 python -m src.main run-now
+
+# Run once for Facebook
+python -m src.main fb-run-now
+
+# Run once for Instagram
+python -m src.main insta-run-now
+
+# Run once for Twitter (X)
+python -m src.main twitter-run-now
 
 # Check account status
 python -m src.main stats

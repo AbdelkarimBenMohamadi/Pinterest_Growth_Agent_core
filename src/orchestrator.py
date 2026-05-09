@@ -13,6 +13,9 @@ from src.creator.image_generator import generate_image
 from src.creator.metadata_generator import generate_metadata
 from src.creator.quality_gate import check_alignment
 from src.worker.pinterest_client import PinterestClient
+from src.facebook_orchestrator import run_facebook_daily_cycle
+from src.instagram_orchestrator import run_instagram_daily_cycle
+from src.twitter_orchestrator import run_twitter_daily_cycle
 from src.worker.scheduler import distribute_posting_times, get_daily_limits
 from src.worker.safety_manager import SafetyManager
 from src.analyzer.engagement_scraper import scrape_engagement
@@ -52,6 +55,13 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
         report.destination_link = posting_cfg.get("default_destination_link", "")
     except Exception:
         pass
+
+    from src.utils.config import get_pinterest_credentials
+    try:
+        get_pinterest_credentials()
+    except ValueError:
+        logger.info("Pinterest credentials not set. Skipping Pinterest cycle.")
+        return
 
     safety = SafetyManager(db, config)
 
@@ -345,6 +355,35 @@ def start_scheduler(config: dict) -> None:
         args=[db, config],
         id='daily_cycle',
         name='Daily Pinterest Growth Cycle'
+    )
+
+    # Schedule Facebook cycle 30 minutes after Pinterest cycle
+    fb_start_minute = 30
+    scheduler.add_job(
+        run_facebook_daily_cycle, 'cron', hour=start_hour, minute=fb_start_minute,
+        args=[db, config],
+        id='daily_fb_cycle',
+        name='Daily Facebook Growth Cycle'
+    )
+
+    # Schedule Instagram cycle 60 minutes after Pinterest cycle
+    insta_start_minute = 0
+    insta_start_hour = (start_hour + 1) % 24
+    scheduler.add_job(
+        run_instagram_daily_cycle, 'cron', hour=insta_start_hour, minute=insta_start_minute,
+        args=[db, config],
+        id='daily_insta_cycle',
+        name='Daily Instagram Growth Cycle'
+    )
+
+    # Schedule Twitter cycle 90 minutes after Pinterest cycle
+    twitter_start_minute = 30
+    twitter_start_hour = (start_hour + 1) % 24
+    scheduler.add_job(
+        run_twitter_daily_cycle, 'cron', hour=twitter_start_hour, minute=twitter_start_minute,
+        args=[db, config],
+        id='daily_twitter_cycle',
+        name='Daily Twitter Growth Cycle'
     )
 
     scheduler.start()

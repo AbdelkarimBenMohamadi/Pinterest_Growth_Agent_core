@@ -8,9 +8,10 @@ logger = logging.getLogger(__name__)
 
 
 class SafetyManager:
-    def __init__(self, db: Database, config: dict):
+    def __init__(self, db: Database, config: dict, platform: str = 'pinterest'):
         self.db = db
         self.config = config
+        self.platform = platform
         self._action_count_today = 0
         self._posts_today = 0
 
@@ -19,10 +20,18 @@ class SafetyManager:
         from datetime import date
         today = date.today()
 
+        table = "pins"
+        if self.platform == "facebook":
+            table = "facebook_posts"
+        elif self.platform == "instagram":
+            table = "instagram_posts"
+        elif self.platform == "twitter":
+            table = "twitter_posts"
+
         conn = self.db._connect()
         try:
             cursor = conn.execute(
-                "SELECT COUNT(*) as count FROM pins WHERE status = 'posted' AND date(posted_at) = ?",
+                f"SELECT COUNT(*) as count FROM {table} WHERE status = 'posted' AND date(posted_at) = ?",
                 (today.isoformat(),)
             )
             row = cursor.fetchone()
@@ -30,8 +39,8 @@ class SafetyManager:
 
             cursor2 = conn.execute(
                 """SELECT COUNT(*) as count FROM agent_log
-                   WHERE action = 'post' AND date(created_at) = ?""",
-                (today.isoformat(),)
+                   WHERE action IN ('post', 'facebook_post', 'instagram_post', 'twitter_post') AND platform = ? AND date(created_at) = ?""",
+                (self.platform, today.isoformat(),)
             )
             row2 = cursor2.fetchone()
             self._action_count_today = row2[0] if row2 else 0
@@ -47,21 +56,29 @@ class SafetyManager:
         can_act = self._action_count_today < limits.max_actions
 
         if not can_post:
-            logger.warning(f"Daily pin limit reached: {self._posts_today}/{limits.max_pins}")
+            logger.warning(f"Daily {self.platform} post limit reached: {self._posts_today}/{limits.max_pins}")
         if not can_act:
-            logger.warning(f"Daily action limit reached: {self._action_count_today}/{limits.max_actions}")
+            logger.warning(f"Daily {self.platform} action limit reached: {self._action_count_today}/{limits.max_actions}")
 
         return can_post and can_act
 
     def check_hourly_limits(self) -> bool:
-        """Max 2 pins per hour. Returns True if safe."""
+        """Max 2 posts per hour. Returns True if safe."""
         from datetime import datetime, timedelta
         one_hour_ago = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+
+        table = "pins"
+        if self.platform == "facebook":
+            table = "facebook_posts"
+        elif self.platform == "instagram":
+            table = "instagram_posts"
+        elif self.platform == "twitter":
+            table = "twitter_posts"
 
         conn = self.db._connect()
         try:
             cursor = conn.execute(
-                "SELECT COUNT(*) as count FROM pins WHERE status = 'posted' AND posted_at >= ?",
+                f"SELECT COUNT(*) as count FROM {table} WHERE status = 'posted' AND posted_at >= ?",
                 (one_hour_ago,)
             )
             row = cursor.fetchone()
@@ -81,8 +98,8 @@ class SafetyManager:
         self.db.log_action("cooldown", {
             "cooldown_until": cooldown_until.isoformat(),
             "reason": "shadowban_detected"
-        })
-        logger.info(f"Entered cooldown until {cooldown_until}")
+        }, platform=self.platform)
+        logger.info(f"Entered cooldown for {self.platform} until {cooldown_until}")
 
     def is_in_cooldown(self) -> bool:
         """Check if cooldown is active."""
@@ -93,8 +110,9 @@ class SafetyManager:
         try:
             cursor = conn.execute(
                 """SELECT details FROM agent_log
-                   WHERE action = 'cooldown'
-                   ORDER BY created_at DESC LIMIT 1"""
+                   WHERE action = 'cooldown' AND platform = ?
+                   ORDER BY created_at DESC LIMIT 1""",
+                (self.platform,)
             )
             row = cursor.fetchone()
             if not row:

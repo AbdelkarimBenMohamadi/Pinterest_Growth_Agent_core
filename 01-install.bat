@@ -3,7 +3,7 @@ cd /d "%~dp0"
 
 echo.
 echo  ╔══════════════════════════════════════════════════════╗
-echo  ║     Pinterest Growth Agent - Setup Wizard             ║
+echo  ║     Social Media Growth Agent - Setup Wizard         ║
 echo  ╚══════════════════════════════════════════════════════╝
 echo.
 
@@ -67,8 +67,9 @@ echo  NEXT STEPS:
 echo .
 echo  STEP 1 - Fill in your .env file (now open in Notepad):
 echo    - GROQ_API_KEY      ^<-- Get free at console.groq.com
-echo    - PINTEREST_EMAIL   ^<-- Your Pinterest account email
-echo    - PINTEREST_PASSWORD ^<-- Your Pinterest account password
+echo    - PINTEREST_EMAIL   ^<-- Pinterest email (optional)
+echo    - FACEBOOK_EMAIL    ^<-- Facebook email (optional)
+echo    - INSTAGRAM_USERNAME ^<-- Instagram username (optional)
 echo.
 echo  STEP 2 - Edit config.yaml with your niche:
 echo    - seed_keywords     ^<-- Topics you want to post about

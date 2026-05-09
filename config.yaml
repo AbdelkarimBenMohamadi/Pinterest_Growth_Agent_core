@@ -1,6 +1,9 @@
 # Account
 account:
   created_date: "2026-04-24" # Date the Pinterest account was created (for warming schedule)
+  facebook_page_id: "" # Optional: Facebook Page ID to post to
+  instagram_username: "" # Optional
+  twitter_username: "" # Optional
 
 # Browser
 browser:
@@ -38,6 +41,13 @@ posting:
 
 ai:
   text_provider: "groq" # Uses OpenAI-compatible API (openai library)
+  text_overlay:
+    enabled: true
+    font_path: "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_size: 60
+    color: "white"
+    shadow_color: "black"
+    position: "bottom" # top | bottom | middle
   text_model: "llama-3.3-70b-versatile" # Groq model for metadata + quality gate
   image_provider: "pollinations" # Free, no API key needed
   max_images_per_day: 15 # Hard cap on image generation calls

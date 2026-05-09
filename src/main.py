@@ -8,8 +8,11 @@ from src.utils.config import load_config
 from src.utils.logger import setup_logging
 from src.store.database import Database
 from src.orchestrator import run_daily_cycle, start_scheduler
+from src.facebook_orchestrator import run_facebook_daily_cycle
+from src.instagram_orchestrator import run_instagram_daily_cycle
+from src.twitter_orchestrator import run_twitter_daily_cycle
 
-app = typer.Typer(help="Pinterest Growth Agent — AI-powered Pinterest automation.")
+app = typer.Typer(help="Pinterest, Facebook, Instagram & Twitter Growth Agent — AI-powered automation.")
 console = Console()
 logger = logging.getLogger(__name__)
 
@@ -32,14 +35,47 @@ def run_now(
     force: bool = typer.Option(False, "--force", help="Bypass daily safety limits"),
     link: str = typer.Option("", "--link", help="Override default_destination_link for this run"),
 ):
-    """Force a single daily cycle immediately."""
+    """Force a single daily Pinterest cycle immediately."""
     config = load_config()
     if link:
         config.setdefault("posting", {})["default_destination_link"] = link
     db = Database(config["paths"]["database"])
     db.initialize()
-    console.print(f"[bold cyan]Starting manual daily cycle...[/bold cyan]")
+    console.print(f"[bold cyan]Starting manual Pinterest daily cycle...[/bold cyan]")
     asyncio.run(run_daily_cycle(db, config, force=force))
+
+@app.command()
+def fb_run_now(
+    force: bool = typer.Option(False, "--force", help="Bypass daily safety limits"),
+):
+    """Force a single daily Facebook cycle immediately."""
+    config = load_config()
+    db = Database(config["paths"]["database"])
+    db.initialize()
+    console.print(f"[bold blue]Starting manual Facebook daily cycle...[/bold blue]")
+    asyncio.run(run_facebook_daily_cycle(db, config, force=force))
+
+@app.command()
+def insta_run_now(
+    force: bool = typer.Option(False, "--force", help="Bypass daily safety limits"),
+):
+    """Force a single daily Instagram cycle immediately."""
+    config = load_config()
+    db = Database(config["paths"]["database"])
+    db.initialize()
+    console.print(f"[bold magenta]Starting manual Instagram daily cycle...[/bold magenta]")
+    asyncio.run(run_instagram_daily_cycle(db, config, force=force))
+
+@app.command()
+def twitter_run_now(
+    force: bool = typer.Option(False, "--force", help="Bypass daily safety limits"),
+):
+    """Force a single daily Twitter cycle immediately."""
+    config = load_config()
+    db = Database(config["paths"]["database"])
+    db.initialize()
+    console.print(f"[bold white]Starting manual Twitter daily cycle...[/bold white]")
+    asyncio.run(run_twitter_daily_cycle(db, config, force=force))
 
 @app.command()
 def stats():
@@ -51,6 +87,19 @@ def stats():
     recent_pins = db.get_recent_pins(days=7)
     total_pins = len(recent_pins)
     posted = sum(1 for p in recent_pins if p.status == "posted")
+
+    recent_fb = db.get_recent_facebook_posts(days=7)
+    total_fb = len(recent_fb)
+    posted_fb = sum(1 for p in recent_fb if p["status"] == "posted")
+
+    recent_insta = db.get_recent_instagram_posts(days=7)
+    total_insta = len(recent_insta)
+    posted_insta = sum(1 for p in recent_insta if p["status"] == "posted")
+
+    recent_twitter = db.get_recent_twitter_posts(days=7)
+    total_twitter = len(recent_twitter)
+    posted_twitter = sum(1 for p in recent_twitter if p["status"] == "posted")
+
     top_keywords = db.get_top_keywords(limit=10)
 
     conn = db._connect()
@@ -67,6 +116,9 @@ def stats():
     # Create Summary Panel
     summary_text = (
         f"Pins Posted (7d): [bold blue]{posted}[/bold blue] / {total_pins}\n"
+        f"Facebook Posts (7d): [bold blue]{posted_fb}[/bold blue] / {total_fb}\n"
+        f"Instagram Posts (7d): [bold blue]{posted_insta}[/bold blue] / {total_insta}\n"
+        f"Twitter Posts (7d): [bold blue]{posted_twitter}[/bold blue] / {total_twitter}\n"
         f"Keywords in DB: [bold blue]{kw_count}[/bold blue]\n"
         f"Trends in DB: [bold blue]{trend_count}[/bold blue]"
     )

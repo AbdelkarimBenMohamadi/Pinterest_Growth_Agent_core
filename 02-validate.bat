@@ -3,7 +3,7 @@ cd /d "%~dp0"
 
 echo.
 echo  ╔══════════════════════════════════════════════════════╗
-echo  ║     Pinterest Growth Agent - Pre-Flight Check       ║
+echo  ║     Social Media Growth Agent - Pre-Flight Check    ║
 echo  ╚══════════════════════════════════════════════════════╝
 echo.
 
@@ -91,19 +91,26 @@ if not errorlevel 1 (
     set ALL_OK=0
 )
 
+echo  Note: Checking for at least one platform credential...
+set CRED_FOUND=0
 findstr /C:"PINTEREST_EMAIL" .env >nul 2>&1
 if not errorlevel 1 (
-    echo  PASS: PINTEREST_EMAIL is set
-) else (
-    echo  FAIL: PINTEREST_EMAIL missing in .env
-    set ALL_OK=0
+    echo  PASS: Pinterest credentials found
+    set CRED_FOUND=1
+)
+findstr /C:"FACEBOOK_EMAIL" .env >nul 2>&1
+if not errorlevel 1 (
+    echo  PASS: Facebook credentials found
+    set CRED_FOUND=1
+)
+findstr /C:"INSTAGRAM_USERNAME" .env >nul 2>&1
+if not errorlevel 1 (
+    echo  PASS: Instagram credentials found
+    set CRED_FOUND=1
 )
 
-findstr /C:"PINTEREST_PASSWORD" .env >nul 2>&1
-if not errorlevel 1 (
-    echo  PASS: PINTEREST_PASSWORD is set
-) else (
-    echo  FAIL: PINTEREST_PASSWORD missing in .env
+if %CRED_FOUND%==0 (
+    echo  FAIL: No platform credentials (Pinterest, FB, or IG) found in .env
     set ALL_OK=0
 )
 echo.

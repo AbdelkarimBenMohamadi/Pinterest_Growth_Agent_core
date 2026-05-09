@@ -46,6 +46,49 @@ CREATE TABLE IF NOT EXISTS pins (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS facebook_posts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_path      TEXT NOT NULL,
+    image_hash      TEXT NOT NULL,
+    text            TEXT NOT NULL,
+    target_keyword  TEXT,
+    page_name       TEXT,
+    content_type    TEXT,
+    status          TEXT DEFAULT 'pending',
+    scheduled_at    TIMESTAMP,
+    posted_at       TIMESTAMP,
+    facebook_url    TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS instagram_posts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_path      TEXT NOT NULL,
+    image_hash      TEXT NOT NULL,
+    caption         TEXT NOT NULL,
+    target_keyword  TEXT,
+    content_type    TEXT,
+    status          TEXT DEFAULT 'pending',
+    scheduled_at    TIMESTAMP,
+    posted_at       TIMESTAMP,
+    instagram_url   TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS twitter_posts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_path      TEXT,
+    image_hash      TEXT,
+    tweet_text      TEXT NOT NULL,
+    target_keyword  TEXT,
+    content_type    TEXT,
+    status          TEXT DEFAULT 'pending',
+    scheduled_at    TIMESTAMP,
+    posted_at       TIMESTAMP,
+    tweet_url       TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS engagement (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     pin_id          INTEGER REFERENCES pins(id),
@@ -60,6 +103,7 @@ CREATE TABLE IF NOT EXISTS engagement (
 CREATE TABLE IF NOT EXISTS agent_log (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     action          TEXT NOT NULL,
+    platform        TEXT DEFAULT 'pinterest',
     details         TEXT,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -227,10 +271,89 @@ class Database:
         finally:
             conn.close()
 
+    def insert_twitter_post(self, post: 'TwitterPost') -> int:
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                """INSERT INTO twitter_posts (image_path, image_hash, tweet_text,
+                   target_keyword, content_type, status, scheduled_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    post.image_path,
+                    post.image_hash,
+                    post.tweet_text,
+                    post.target_keyword,
+                    post.content_type,
+                    post.status,
+                    post.scheduled_at.isoformat() if post.scheduled_at else None,
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
+    def insert_facebook_post(self, post: 'FacebookPost') -> int:
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                """INSERT INTO facebook_posts (image_path, image_hash, text,
+                   target_keyword, page_name, content_type, status, scheduled_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    post.image_path,
+                    post.image_hash,
+                    post.text,
+                    post.target_keyword,
+                    post.page_name,
+                    post.content_type,
+                    post.status,
+                    post.scheduled_at.isoformat() if post.scheduled_at else None,
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
+    def insert_instagram_post(self, post: 'InstagramPost') -> int:
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                """INSERT INTO instagram_posts (image_path, image_hash, caption,
+                   target_keyword, content_type, status, scheduled_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    post.image_path,
+                    post.image_hash,
+                    post.caption,
+                    post.target_keyword,
+                    post.content_type,
+                    post.status,
+                    post.scheduled_at.isoformat() if post.scheduled_at else None,
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
     def update_pin_status(self, pin_id: int, status: str) -> None:
         conn = self._connect()
         try:
             conn.execute("UPDATE pins SET status = ? WHERE id = ?", (status, pin_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def update_twitter_post_status(self, post_id: int, status: str, url: str | None = None) -> None:
+        conn = self._connect()
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "UPDATE twitter_posts SET status = ?, tweet_url = ?, posted_at = ? WHERE id = ?",
+                (status, url, now if status == "posted" else None, post_id),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -253,8 +376,32 @@ class Database:
                 (status, url, now if status == "posted" else None, pin_id),
             )
             conn.execute(
-                "INSERT INTO agent_log (action, details) VALUES (?, ?)",
-                (log_action, json.dumps(log_details)),
+                "INSERT INTO agent_log (action, platform, details) VALUES (?, ?, ?)",
+                (log_action, 'pinterest', json.dumps(log_details)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def update_facebook_post_status(self, post_id: int, status: str, url: str | None = None) -> None:
+        conn = self._connect()
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "UPDATE facebook_posts SET status = ?, facebook_url = ?, posted_at = ? WHERE id = ?",
+                (status, url, now if status == "posted" else None, post_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def update_instagram_post_status(self, post_id: int, status: str, url: str | None = None) -> None:
+        conn = self._connect()
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "UPDATE instagram_posts SET status = ?, instagram_url = ?, posted_at = ? WHERE id = ?",
+                (status, url, now if status == "posted" else None, post_id),
             )
             conn.commit()
         finally:
@@ -268,6 +415,45 @@ class Database:
             )
             rows = cursor.fetchall()
             return [self._row_to_pin(row) for row in rows]
+        finally:
+            conn.close()
+
+    def get_recent_facebook_posts(self, days: int = 7) -> list[dict]:
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                """SELECT * FROM facebook_posts
+                   WHERE created_at >= datetime('now', ?)
+                   ORDER BY created_at DESC""",
+                (f"-{days} days",),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_recent_twitter_posts(self, days: int = 7) -> list[dict]:
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                """SELECT * FROM twitter_posts
+                   WHERE created_at >= datetime('now', ?)
+                   ORDER BY created_at DESC""",
+                (f"-{days} days",),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_recent_instagram_posts(self, days: int = 7) -> list[dict]:
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                """SELECT * FROM instagram_posts
+                   WHERE created_at >= datetime('now', ?)
+                   ORDER BY created_at DESC""",
+                (f"-{days} days",),
+            )
+            return [dict(row) for row in cursor.fetchall()]
         finally:
             conn.close()
 
@@ -327,12 +513,12 @@ class Database:
         finally:
             conn.close()
 
-    def log_action(self, action: str, details: dict) -> None:
+    def log_action(self, action: str, details: dict, platform: str = 'pinterest') -> None:
         conn = self._connect()
         try:
             conn.execute(
-                "INSERT INTO agent_log (action, details) VALUES (?, ?)",
-                (action, json.dumps(details)),
+                "INSERT INTO agent_log (action, platform, details) VALUES (?, ?, ?)",
+                (action, platform, json.dumps(details)),
             )
             conn.commit()
         finally:

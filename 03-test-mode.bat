@@ -3,7 +3,7 @@ cd /d "%~dp0"
 
 echo.
 echo  ╔══════════════════════════════════════════════════════╗
-echo  ║  Pinterest Growth Agent - FORCE TEST MODE           ║
+echo  ║  Social Media Growth Agent - FORCE TEST MODE         ║
 echo  ╚══════════════════════════════════════════════════════╝
 echo.
 
@@ -15,9 +15,9 @@ echo  This mode is intended for TESTING only.
 echo  Do NOT use it repeatedly on a live account.
 echo.
 echo  What this does:
-echo    - Generates and posts pins regardless of daily limits
+echo    - Runs the Pinterest force cycle (default)
+echo    - Generates and posts regardless of daily limits
 echo    - Runs the full Research ^>^> Generate ^>^> Post flow
-echo    - Bypasses hourly and daily pin caps
 echo.
 echo  When to use:
 echo    - First time setup - to verify everything works

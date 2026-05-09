@@ -61,6 +61,17 @@ class Pin:
 
 
 @dataclass
+class PostPinResult:
+    status: str
+    url: str = ""
+    verified: bool = False
+    source: str = ""
+    message: str = ""
+    selected_board: str = ""
+    artifacts: list[str] = field(default_factory=list)
+
+
+@dataclass
 class EngagementData:
     pin_id: int = 0
     impressions: int = 0

@@ -22,6 +22,7 @@ class CycleReport:
         self.briefs_created: int = 0
         self.images_generated: int = 0
         self.pins_posted: int = 0
+        self.pins_unverified: int = 0
         self.pins_failed: int = 0
         self.scrape_errors: int = 0
         self.shadowban_detected: bool = False
@@ -35,6 +36,7 @@ class CycleReport:
         self.research_details: dict[str, Any] = {}
         self.destination_link_mode: str = "none"
         self.destination_link: str = ""
+        self.account_type: str = "unknown"
         self.seo_scraper_health: dict[str, Any] = {}
         self.trend_scraper_health: dict[str, Any] = {}
 
@@ -78,6 +80,7 @@ class CycleReport:
             f"[dim]Started:[/dim]   {self.cycle_start.strftime('%Y-%m-%d %H:%M:%S UTC')}",
             f"[dim]Duration:[/dim]  {self.duration_str()}",
             f"[dim]Status:[/dim]    {status}",
+            f"[dim]Account:[/dim]   {self.account_type}",
         ]
         console.print(Panel(
             "\n".join(meta_lines), title="[bold]Cycle Summary[/bold]", style="dim"
@@ -139,11 +142,14 @@ class CycleReport:
         pin_table.add_column("Keyword", style="cyan")
         pin_table.add_column("Title", style="white")
         pin_table.add_column("Board", style="dim")
+        pin_table.add_column("Scheduled", style="dim")
+        pin_table.add_column("Posted", style="dim")
         pin_table.add_column("Status", style="green")
         pin_table.add_column("URL", style="blue")
 
         for i, pin in enumerate(self.posted_pins, 1):
-            status_color = "green" if pin.get("status") == "posted" else "red"
+            status = pin.get("status")
+            status_color = "green" if status == "posted" else "yellow" if status == "unverified" else "red"
             url = pin.get("url") or "-"
             board = pin.get("board") or "-"
             pin_table.add_row(
@@ -151,13 +157,18 @@ class CycleReport:
                 pin.get("keyword") or "",
                 textwrap.shorten(pin.get("title") or "", width=40),
                 textwrap.shorten(board, width=20),
-                f"[{status_color}]{pin.get('status') or ''}[/{status_color}]",
+                self._format_dt(pin.get("scheduled_at")),
+                self._format_dt(pin.get("posted_at")),
+                f"[{status_color}]{status or ''}[/{status_color}]",
                 textwrap.shorten(url, width=35) if url != "-" else "-"
             )
 
         console.print(pin_table)
 
-        summary = f"  Posted: {self.pins_posted}  |  Failed: {self.pins_failed}  |  Generated: {self.images_generated}"
+        summary = (
+            f"  Posted: {self.pins_posted}  |  Unverified: {self.pins_unverified}  |  "
+            f"Failed: {self.pins_failed}  |  Generated: {self.images_generated}"
+        )
         if self.destination_link_mode != "none" and self.destination_link:
             summary += f"  |  Link mode: {self.destination_link_mode}  ->  {self.destination_link}"
         console.print(f"  [dim]{summary}[/dim]")
@@ -240,6 +251,7 @@ class CycleReport:
             f"Started:      {self.cycle_start.strftime('%Y-%m-%d %H:%M:%S UTC')}",
             f"Duration:     {duration}",
             f"Status:       {'SUCCESS' if self.pins_posted > 0 and not self.shadowban_detected else 'COMPLETED WITH WARNINGS' if not self.shadowban_detected else 'SHADOWBAN DETECTED'}",
+            f"Account:      {self.account_type}",
             "",
         ]
 
@@ -263,6 +275,7 @@ class CycleReport:
         lines.append(f"  Content briefs created: {self.briefs_created}")
         lines.append(f"  Images generated:       {self.images_generated}")
         lines.append(f"  Pins posted:            {self.pins_posted}")
+        lines.append(f"  Pins unverified:        {self.pins_unverified}")
         lines.append(f"  Pins failed:            {self.pins_failed}")
         if self.destination_link_mode != "none" and self.destination_link:
             lines.append(f"  Destination link mode:  {self.destination_link_mode}")
@@ -273,7 +286,20 @@ class CycleReport:
             lines.append(f"    [{pin.get('status', '').upper()}] {pin.get('title', '')}")
             if pin.get("url"):
                 lines.append(f"      URL: {pin.get('url', '')}")
+            if pin.get("verified") is not None:
+                lines.append(f"      Verified: {pin.get('verified')} | Source: {pin.get('verification_source') or 'N/A'}")
+            if pin.get("message"):
+                lines.append(f"      Message: {pin.get('message')}")
+            if pin.get("artifacts"):
+                lines.append("      Debug artifacts:")
+                for artifact in pin.get("artifacts", [])[:6]:
+                    lines.append(f"        - {artifact}")
             lines.append(f"      Keyword: {pin.get('keyword', '')} | Board: {pin.get('board', 'N/A')}")
+            if pin.get("scheduled_at") or pin.get("posted_at"):
+                lines.append(
+                    f"      Scheduled: {self._format_dt(pin.get('scheduled_at'))} | "
+                    f"Posted: {self._format_dt(pin.get('posted_at'))}"
+                )
 
         lines.append("")
         lines.append("-" * 70)
@@ -345,3 +371,10 @@ class CycleReport:
         latest_path = Path("data/cycle_report.log")
         latest_path.write_text(content, encoding="utf-8")
         logger.info(f"Cycle report saved to {log_path}")
+
+    def _format_dt(self, value: Any) -> str:
+        if not value:
+            return "-"
+        if isinstance(value, datetime):
+            return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        return str(value)

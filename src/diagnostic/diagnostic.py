@@ -7,14 +7,15 @@ Reports to dashboard instead of auto-applying fixes.
 import asyncio
 import json
 import logging
+from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 
-from src.utils.config import get_groq_client, call_groq_with_retry
+from src.utils.config import get_browser_config, get_groq_client, call_groq_with_retry
 from src.store.database import Database
-from src.utils.constants import SESSION_FILE, DIAGNOSTIC_CONSECUTIVE_FAILURES, DIAGNOSTIC_AVG_RESULTS_THRESHOLD
+from src.utils.constants import DIAGNOSTIC_CONSECUTIVE_FAILURES, DIAGNOSTIC_AVG_RESULTS_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +102,6 @@ Return your diagnosis as a JSON object with root_cause, severity, suggested_fix,
 
 async def inspect_live_page(module: str, config: dict) -> str | None:
     """Capture live page content from Pinterest to feed to AI for diagnosis."""
-    from pathlib import Path
-    SESSION_FILE = Path("data/pinterest_session.json")
-
     urls = {
         "seo_scraper": "https://www.pinterest.com/search/pins/?q=home+decor",
         "trend_monitor": "https://www.pinterest.com/search/pins/?q=interior+design",
@@ -117,10 +115,12 @@ async def inspect_live_page(module: str, config: dict) -> str | None:
 
     try:
         async with stealth.use_async(async_playwright()) as p:
-            browser = await p.chromium.launch(headless=True)
+            browser_cfg = get_browser_config(config)
+            browser = await p.chromium.launch(headless=browser_cfg["headless"])
             context = None
             try:
-                storage = str(SESSION_FILE) if SESSION_FILE.exists() else None
+                session_file = Path(browser_cfg["session_file"])
+                storage = str(session_file) if session_file.exists() else None
                 context = await browser.new_context(
                     storage_state=storage,
                     viewport={"width": 1280, "height": 800},

@@ -1,12 +1,12 @@
 # Account
 account:
-  created_date: "2026-04-24" # Date the Pinterest account was created (for warming schedule)
+  created_date: "2016-01-01" # Date the Pinterest account was created (for warming schedule)
 
 # Browser
 browser:
+  mode: gui # gui | headless
   session_file: "data/pinterest_session.json" # Playwright session (auto-managed)
   chrome_profile_path: "" # Optional: Path to custom Chrome profile (leave empty to use .env credentials)
-  headless: false # false = headful (recommended for debugging)
 
 # Niche Configuration
 niche:
@@ -29,17 +29,28 @@ schedule:
   interval_min_minutes: 15 # Minimum gap between posts
   interval_max_minutes: 45 # Maximum gap between posts
 
+# Scraper Behavior
+scraper:
+  mode: "safe" # safe = one browser window, sequential searches | fast = parallel browser windows
+  safe_delay_seconds: 2
+
 # Posting Destination Link
 posting:
+  schedule_mode: "scheduled" # scheduled | immediate
   destination_link_mode: "both" # none | description_only | destination_link | both
   default_destination_link: "https://www.youtube.com/@amerelshamy2406" # e.g. https://yoursite.com
 
 # AI Configuration
 
 ai:
-  text_provider: "groq" # Uses OpenAI-compatible API (openai library)
-  text_model: "llama-3.3-70b-versatile" # Groq model for metadata + quality gate
-  image_provider: "pollinations" # Free, no API key needed
+  text_provider: "deepseek" # deepseek | groq | openai | openrouter
+  text_model: "deepseek-v4-flash" # DeepSeek V4 Flash for metadata + quality gate
+  quality_gate_model: "deepseek-v4-flash"
+  self_healing_model: "deepseek-v4-pro"
+  image_provider: "openai" # pollinations | openai | openai_images | together | huggingface | comfyui
+  openai_image_model: "gpt-image-1" # Requires OPENAI_API_KEY
+  openai_image_size: "1024x1536" # Pinterest-friendly 2:3 vertical image
+  openai_image_quality: "medium" # low | medium | high
   max_images_per_day: 15 # Hard cap on image generation calls
   max_retries: 2 # Max regeneration attempts per pin
 
@@ -65,7 +76,7 @@ comfyui:
 
 # Cost Limits
 limits:
-  max_api_cost_per_day: 0.00 # $0 — both Groq and Pollinations have free tiers
+  max_api_cost_per_day: 0.00 # OpenAI image generation is paid; cost enforcement is not enabled yet
 
 # Paths (relative to project root)
 paths:

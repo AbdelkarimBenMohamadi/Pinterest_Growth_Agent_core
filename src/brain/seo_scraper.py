@@ -8,7 +8,7 @@ from playwright.async_api import async_playwright, Page, Response
 from playwright_stealth import Stealth
 from src.models import Keyword
 from src.store.database import Database
-from src.utils.constants import SESSION_FILE
+from src.utils.config import get_browser_config
 
 logger = logging.getLogger(__name__)
 
@@ -55,39 +55,26 @@ def _is_valid_keyword(term: str) -> bool:
     return True
 
 
-async def scrape_keywords(seed_keywords: list[str], db: Database, config: dict) -> list[Keyword]:
+async def scrape_keywords(seed_keywords: list[str], db: Database, config: dict, page: Page | None = None) -> list[Keyword]:
     all_keywords: list[Keyword] = []
+    scraper_mode = config.get("scraper", {}).get("mode", "safe").lower().strip()
+    browser_mode = get_browser_config(config)["mode"]
+
+    if page is not None and browser_mode == "gui" and scraper_mode == "fast":
+        logger.warning("Ignoring scraper.mode=fast in GUI shared-page mode; using safe sequential scraping")
+        scraper_mode = "safe"
+
+    if scraper_mode != "fast":
+        return await _scrape_keywords_safe(seed_keywords, db, config, page=page)
 
     async def _process_seed(seed: str) -> list[Keyword]:
         """Process a single seed keyword — runs in parallel with others."""
-        seed_keywords_result: list[Keyword] = []
         try:
             keywords = await _extract_keywords_from_page(seed, config)
-
-            seen = set()
-            for rank, term in enumerate(keywords):
-                if not _is_valid_keyword(term):
-                    continue
-                term_lower = term.lower().strip()
-                if term_lower in seen:
-                    continue
-                seen.add(term_lower)
-
-                kw = Keyword(
-                    term=term.strip(),
-                    suggestion_rank=rank + 1,
-                    related_terms=[seed],
-                    source="autosuggest"
-                )
-                db.upsert_keyword(kw)
-                seed_keywords_result.append(kw)
-
-            logger.info(f"Found {len(seed_keywords_result)} valid keywords for '{seed}'")
-
+            return _store_seed_keywords(seed, keywords, db)
         except Exception as e:
             logger.warning(f"Failed to scrape '{seed}': {e}")
-
-        return seed_keywords_result
+            return []
 
     # Run all seed keywords in parallel
     results = await asyncio.gather(
@@ -104,10 +91,109 @@ async def scrape_keywords(seed_keywords: list[str], db: Database, config: dict) 
     return all_keywords
 
 
-async def _extract_keywords_from_page(keyword: str, config: dict) -> list[str]:
-    """Extract keyword suggestions from Pinterest using API interception + DOM scraping."""
-    suggestions: list[str] = []
+async def _scrape_keywords_safe(seed_keywords: list[str], db: Database, config: dict, page: Page | None = None) -> list[Keyword]:
+    """Process seed keywords sequentially in one browser window/context."""
+    logger.info("SEO scraper running in safe sequential mode")
+    all_keywords: list[Keyword] = []
+
+    if page is not None:
+        logger.info("SEO scraper reusing shared Pinterest browser page")
+        for seed in seed_keywords:
+            try:
+                keywords = await _extract_keywords_with_page(page, seed)
+                stored = _store_seed_keywords(seed, keywords, db)
+                all_keywords.extend(stored)
+                logger.info(f"Found {len(stored)} valid keywords for '{seed}'")
+                await asyncio.sleep(config.get("scraper", {}).get("safe_delay_seconds", 2))
+            except Exception as e:
+                logger.warning(f"Failed to scrape '{seed}': {e}")
+        return all_keywords
+
     stealth = Stealth()
+
+    async with stealth.use_async(async_playwright()) as p:
+        browser = None
+        context = None
+        try:
+            browser_cfg = get_browser_config(config)
+            browser = await p.chromium.launch(
+                headless=browser_cfg["headless"],
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+            )
+
+            session_file = Path(browser_cfg["session_file"])
+            storage = str(session_file) if session_file.exists() else None
+            context = await browser.new_context(
+                storage_state=storage,
+                viewport={"width": 1280, "height": 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="en-US",
+            )
+            page = await context.new_page()
+
+            for seed in seed_keywords:
+                try:
+                    keywords = await _extract_keywords_with_page(page, seed)
+                    stored = _store_seed_keywords(seed, keywords, db)
+                    all_keywords.extend(stored)
+                    logger.info(f"Found {len(stored)} valid keywords for '{seed}'")
+                    await asyncio.sleep(config.get("scraper", {}).get("safe_delay_seconds", 2))
+                except Exception as e:
+                    logger.warning(f"Failed to scrape '{seed}': {e}")
+
+        except Exception as e:
+            logger.warning(f"Playwright safe keyword scraping failed: {e}")
+        finally:
+            try:
+                if context:
+                    await context.close()
+                if browser:
+                    await browser.close()
+            except Exception:
+                pass
+
+    return all_keywords
+
+
+async def _extract_keywords_from_page(keyword: str, config: dict) -> list[str]:
+    """Extract keyword suggestions from Pinterest using an isolated browser."""
+    stealth = Stealth()
+
+    async with stealth.use_async(async_playwright()) as p:
+        browser = None
+        context = None
+        try:
+            browser_cfg = get_browser_config(config)
+            browser = await p.chromium.launch(
+                headless=browser_cfg["headless"],
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+            )
+
+            session_file = Path(browser_cfg["session_file"])
+            storage = str(session_file) if session_file.exists() else None
+            context = await browser.new_context(
+                storage_state=storage,
+                viewport={"width": 1280, "height": 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="en-US",
+            )
+            page = await context.new_page()
+            return await _extract_keywords_with_page(page, keyword)
+        except Exception as e:
+            logger.warning(f"Playwright extraction failed for '{keyword}': {e}")
+            return []
+        finally:
+            try:
+                if context:
+                    await context.close()
+                if browser:
+                    await browser.close()
+            except Exception:
+                pass
+
+async def _extract_keywords_with_page(page: Page, keyword: str) -> list[str]:
+    """Extract keyword suggestions on an existing Pinterest page."""
+    suggestions: list[str] = []
     api_suggestions: list[str] = []
 
     async def _on_response(response: Response) -> None:
@@ -120,54 +206,35 @@ async def _extract_keywords_from_page(keyword: str, config: dict) -> list[str]:
             except Exception as e:
                 logger.debug(f"Failed to parse AdvancedTypeahead response: {e}")
 
-    async with stealth.use_async(async_playwright()) as p:
+    page.on("response", _on_response)
+    try:
+        await page.goto(f"https://www.pinterest.com/search/pins/?q={keyword}", timeout=30000)
+        await asyncio.sleep(4)
+
+        autocomplete_kw = await _try_autocomplete(page, keyword)
+        if autocomplete_kw:
+            suggestions.extend(autocomplete_kw)
+
+        if api_suggestions:
+            suggestions.extend(api_suggestions)
+
+        if len(suggestions) < 5:
+            dom_suggestions = await _scrape_dom_suggestions(page)
+            suggestions.extend(dom_suggestions)
+
+        if len(suggestions) < 5:
+            related = await _scrape_related_searches(page)
+            suggestions.extend(related)
+    finally:
         try:
-            headless = config.get("browser", {}).get("headless", False)
-            browser = await p.chromium.launch(
-                headless=headless,
-                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
-            )
+            page.remove_listener("response", _on_response)
+        except Exception:
+            pass
 
-            storage = str(SESSION_FILE) if SESSION_FILE.exists() else None
-            context = await browser.new_context(
-                storage_state=storage,
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                locale="en-US",
-            )
-            page = await context.new_page()
-            page.on("response", _on_response)
+    return _dedupe_suggestions(suggestions)[:15]
 
-            # Navigate to Pinterest search
-            await page.goto(f"https://www.pinterest.com/search/pins/?q={keyword}", timeout=30000)
-            await asyncio.sleep(4)
 
-            # Strategy 1: Type into search bar to trigger autocomplete
-            autocomplete_kw = await _try_autocomplete(page, keyword)
-            if autocomplete_kw:
-                suggestions.extend(autocomplete_kw)
-
-            # If API interception gave us suggestions, use those
-            if api_suggestions:
-                suggestions.extend(api_suggestions)
-
-            # Strategy 2: DOM scraping of search results (broad selectors)
-            if len(suggestions) < 5:
-                dom_suggestions = await _scrape_dom_suggestions(page)
-                suggestions.extend(dom_suggestions)
-
-            # Strategy 3: Scrape "Related searches" section
-            if len(suggestions) < 5:
-                related = await _scrape_related_searches(page)
-                suggestions.extend(related)
-
-            await context.close()
-            await browser.close()
-
-        except Exception as e:
-            logger.warning(f"Playwright extraction failed for '{keyword}': {e}")
-
-    # Deduplicate while preserving order
+def _dedupe_suggestions(suggestions: list[str]) -> list[str]:
     seen = set()
     unique = []
     for s in suggestions:
@@ -175,8 +242,30 @@ async def _extract_keywords_from_page(keyword: str, config: dict) -> list[str]:
         if s_lower not in seen:
             seen.add(s_lower)
             unique.append(s.strip())
+    return unique
 
-    return unique[:15]
+
+def _store_seed_keywords(seed: str, keywords: list[str], db: Database) -> list[Keyword]:
+    seed_keywords_result: list[Keyword] = []
+    seen = set()
+    for rank, term in enumerate(keywords):
+        if not _is_valid_keyword(term):
+            continue
+        term_lower = term.lower().strip()
+        if term_lower in seen:
+            continue
+        seen.add(term_lower)
+
+        kw = Keyword(
+            term=term.strip(),
+            suggestion_rank=rank + 1,
+            related_terms=[seed],
+            source="autosuggest"
+        )
+        db.upsert_keyword(kw)
+        seed_keywords_result.append(kw)
+
+    return seed_keywords_result
 
 
 async def _try_autocomplete(page: Page, keyword: str) -> list[str]:
@@ -380,5 +469,3 @@ def _parse_suggestion_api(data: dict) -> list[str]:
         logger.debug(f"Suggestion API parsing failed: {e}")
 
     return suggestions
-
-

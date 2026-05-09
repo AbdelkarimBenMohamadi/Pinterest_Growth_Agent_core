@@ -7,7 +7,7 @@ from rich.panel import Panel
 from src.utils.config import load_config
 from src.utils.logger import setup_logging
 from src.store.database import Database
-from src.orchestrator import run_daily_cycle, start_scheduler
+from src.orchestrator import retry_posting_pin, run_daily_cycle, start_scheduler
 
 app = typer.Typer(help="Pinterest Growth Agent — AI-powered Pinterest automation.")
 console = Console()
@@ -19,9 +19,13 @@ def main():
     setup_logging()
 
 @app.command()
-def start():
+def start(
+    browser_mode: str = typer.Option("", "--browser-mode", help="Override browser mode: gui or headless"),
+):
     """Start the APScheduler loop for daily Pinterest growth."""
     config = load_config()
+    if browser_mode:
+        _set_browser_mode(config, browser_mode)
     db = Database(config["paths"]["database"])
     db.initialize()
     console.print("[bold green]Starting APScheduler background loop...[/bold green]")
@@ -29,17 +33,48 @@ def start():
 
 @app.command()
 def run_now(
-    force: bool = typer.Option(False, "--force", help="Bypass daily safety limits"),
+    force: bool = typer.Option(False, "--force", help="Bypass daily safety limits and schedule waiting"),
     link: str = typer.Option("", "--link", help="Override default_destination_link for this run"),
+    browser_mode: str = typer.Option("", "--browser-mode", help="Override browser mode: gui or headless"),
+    schedule_mode: str = typer.Option("", "--schedule-mode", help="Override posting schedule mode: scheduled or immediate"),
+    max_pins: int = typer.Option(0, "--max-pins", help="Maximum pins to process in this run; 0 means no override"),
 ):
     """Force a single daily cycle immediately."""
     config = load_config()
     if link:
         config.setdefault("posting", {})["default_destination_link"] = link
+    if browser_mode:
+        _set_browser_mode(config, browser_mode)
+    if schedule_mode:
+        _set_schedule_mode(config, schedule_mode)
     db = Database(config["paths"]["database"])
     db.initialize()
     console.print(f"[bold cyan]Starting manual daily cycle...[/bold cyan]")
-    asyncio.run(run_daily_cycle(db, config, force=force))
+    asyncio.run(run_daily_cycle(db, config, force=force, max_pins=max_pins or None))
+
+
+@app.command()
+def retry_post(
+    pin_id: int = typer.Argument(..., help="Existing local pin ID to retry"),
+    link: str = typer.Option("", "--link", help="Override default_destination_link for this retry"),
+    browser_mode: str = typer.Option("", "--browser-mode", help="Override browser mode: gui or headless"),
+):
+    """Retry posting one existing generated pin without regenerating image or metadata."""
+    config = load_config()
+    if link:
+        config.setdefault("posting", {})["default_destination_link"] = link
+    if browser_mode:
+        _set_browser_mode(config, browser_mode)
+    db = Database(config["paths"]["database"])
+    db.initialize()
+    console.print(f"[bold cyan]Retrying post for pin {pin_id}...[/bold cyan]")
+    result = asyncio.run(retry_posting_pin(db, config, pin_id))
+    if result.status == "posted" and result.verified:
+        console.print(f"[bold green]Verified Pinterest URL:[/bold green] {result.url}")
+    elif result.status == "unverified":
+        console.print(f"[bold yellow]Post unverified:[/bold yellow] {result.message}")
+    else:
+        console.print(f"[bold red]Post failed:[/bold red] {result.message}")
 
 @app.command()
 def stats():
@@ -90,6 +125,18 @@ def stats():
         for action_row in recent_actions:
             action_table.add_row(action_row[1], action_row[0])
         console.print(action_table)
+
+
+def _set_browser_mode(config: dict, mode: str) -> None:
+    if mode not in {"gui", "headless"}:
+        raise typer.BadParameter("browser mode must be 'gui' or 'headless'")
+    config.setdefault("browser", {})["mode"] = mode
+
+
+def _set_schedule_mode(config: dict, mode: str) -> None:
+    if mode not in {"scheduled", "immediate"}:
+        raise typer.BadParameter("schedule mode must be 'scheduled' or 'immediate'")
+    config.setdefault("posting", {})["schedule_mode"] = mode
 
 if __name__ == "__main__":
     app()

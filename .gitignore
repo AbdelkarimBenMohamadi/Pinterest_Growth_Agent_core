@@ -1,40 +1,59 @@
 assets/external/
 .states
 *.db
+*.sqlite
+*.sqlite3
 .web
-# Byte-compiled
+
+# Byte-compiled files
+
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual environment
+# Virtual environments
+
 venv/
 .venv/
 env/
 
-# IDE
+# Editors and local tooling
+
 .vscode/
 .idea/
 *.swp
 *.swo
+.cache/
 
-# Environment & secrets
+# Environment files and secrets
+
 .env
+.env.*
+!.env.example
+*.pem
+*.key
 
-# Generated data (rebuild anytime)
+# Runtime data and generated assets
+
 data/
 assets/
 
-# OS files
+# OS files and metadata
+
 .DS_Store
+._*
+.AppleDouble
+.LSOverride
 Thumbs.db
 
 # Test artifacts
+
 .pytest_cache/
 htmlcov/
 .coverage
 
-# AI & Development Documentation
+# Local planning notes and scratch files
+
 walkthrough.md
 implementation_plan.md
 task.md
@@ -43,5 +62,4 @@ Agents_Team_Architecture/
 BUILD_GUIDE.md
 prd.md
 spec.md
-tests/
-
+*_ROADMAP.md

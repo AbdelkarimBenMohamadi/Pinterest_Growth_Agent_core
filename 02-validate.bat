@@ -38,9 +38,9 @@ if not errorlevel 1 (
     echo  FAIL: Run 01-install.bat to install dependencies
     set ALL_OK=0
 )
-pip show groq >nul 2>&1
+pip show openai >nul 2>&1
 if not errorlevel 1 (
-    echo  PASS: groq
+    echo  PASS: openai
 ) else (
     echo  FAIL: Run 01-install.bat to install dependencies
     set ALL_OK=0

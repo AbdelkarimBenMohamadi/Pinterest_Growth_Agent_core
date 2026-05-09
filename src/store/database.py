@@ -271,6 +271,15 @@ class Database:
         finally:
             conn.close()
 
+    def get_pin(self, pin_id: int) -> Pin | None:
+        conn = self._connect()
+        try:
+            cursor = conn.execute("SELECT * FROM pins WHERE id = ? LIMIT 1", (pin_id,))
+            row = cursor.fetchone()
+            return self._row_to_pin(row) if row else None
+        finally:
+            conn.close()
+
     def get_recent_pins(self, days: int = 7) -> list[Pin]:
         conn = self._connect()
         try:

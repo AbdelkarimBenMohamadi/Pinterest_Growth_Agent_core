@@ -1,7 +1,7 @@
-import json
 import logging
 from src.models import ContentBrief, PinMetadata
-from src.utils.config import get_groq_client, call_groq_with_retry, get_posting_config
+from src.utils.config import call_text_ai_with_retry, get_posting_config, get_text_ai_client
+from src.utils.json_utils import parse_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +13,15 @@ def _build_description_link_text(destination_link: str) -> str:
 
 async def generate_metadata(brief: ContentBrief, config: dict) -> PinMetadata:
     """
-    Call Groq API to generate pin metadata. Uses OpenAI library with different base_url.
+    Call the configured OpenAI-compatible text provider to generate pin metadata.
     """
-    client = get_groq_client()
-    model = config.get("ai", {}).get("text_model", "llama-3.3-70b-versatile")
+    client, provider = get_text_ai_client(config)
+    model = config.get("ai", {}).get("text_model", "deepseek-v4-flash")
 
-    response_text = await call_groq_with_retry(
+    logger.info("Generating metadata with %s/%s", provider, model)
+    response_text = await call_text_ai_with_retry(
         client,
+        provider,
         model=model,
         messages=[
             {"role": "system", "content": "You are a Pinterest SEO expert. Return ONLY valid JSON."},
@@ -39,7 +41,7 @@ Return JSON with these exact keys:
         max_tokens=500,
     )
 
-    data = json.loads(response_text)
+    data = parse_json_object(response_text)
 
     posting_config = get_posting_config(config)
     link_mode = posting_config.get("destination_link_mode", "none")
@@ -50,12 +52,18 @@ Return JSON with these exact keys:
     if link_mode in ("description_only", "both") and destination_link:
         description += _build_description_link_text(destination_link)
 
+    hashtags = data.get("hashtags", [])
+    if isinstance(hashtags, str):
+        hashtags = [tag.strip() for tag in hashtags.replace(",", " ").split() if tag.strip()]
+    if not isinstance(hashtags, list):
+        hashtags = []
+
     return PinMetadata(
         title=data["title"][:100],
         description=description,
         alt_text=data["alt_text"][:500],
         suggested_board=data.get("suggested_board", ""),
-        hashtags=data.get("hashtags", []),
+        hashtags=hashtags[:5],
         destination_link_mode=link_mode,
         default_destination_link=destination_link,
     )

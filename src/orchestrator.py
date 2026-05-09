@@ -1,11 +1,11 @@
 import asyncio
 import logging
-import time
+from pathlib import Path
 from datetime import datetime, timezone as tz
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.blocking import BlockingScheduler
 
 from src.store.database import Database
-from src.utils.config import load_config, get_posting_config
+from src.utils.config import get_posting_config
 from src.brain.seo_scraper import scrape_keywords
 from src.brain.trend_monitor import fetch_trends
 from src.brain.decision_engine import select_todays_content
@@ -13,18 +13,18 @@ from src.creator.image_generator import generate_image
 from src.creator.metadata_generator import generate_metadata
 from src.creator.quality_gate import check_alignment
 from src.worker.pinterest_client import PinterestClient
-from src.worker.scheduler import distribute_posting_times, get_daily_limits
+from src.worker.scheduler import distribute_posting_times, get_daily_limits, wait_until_scheduled
 from src.worker.safety_manager import SafetyManager
 from src.analyzer.engagement_scraper import scrape_engagement
 from src.analyzer.feedback import update_keyword_scores
 from src.diagnostic.diagnostic import run_all_diagnostics
-from src.models import Pin
+from src.models import Pin, PinMetadata, PostPinResult
 from src.report.cycle_report import CycleReport
 
 logger = logging.getLogger(__name__)
 
 
-async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> None:
+async def run_daily_cycle(db: Database, config: dict, force: bool = False, max_pins: int | None = None) -> None:
     """
     The complete daily agent cycle:
     1. Check cooldown
@@ -73,6 +73,9 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
             logger.error("Login failed. Skipping posting cycle.")
             return
 
+        report.account_type = await pinterest_client.detect_account_type()
+        shared_page = await pinterest_client.get_page()
+
         logger.info("Step 1: Research")
 
         keywords = []
@@ -80,7 +83,7 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
         research_error = None
 
         try:
-            keywords = await scrape_keywords(seed_keywords, db, config)
+            keywords = await scrape_keywords(seed_keywords, db, config, page=shared_page)
             success = len(keywords) > 0
             db.record_scrape_run("seo_scraper", success=success, result_count=len(keywords))
             if not success:
@@ -91,7 +94,7 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
             research_error = str(e)
 
         try:
-            trends = await fetch_trends(categories, db, config)
+            trends = await fetch_trends(categories, db, config, page=shared_page)
             success = len(trends) > 0
             db.record_scrape_run("trend_monitor", success=success, result_count=len(trends))
             if not success:
@@ -134,6 +137,8 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
         seo_percent = config.get("strategy", {}).get("seo_percent", 70)
 
         briefs = select_todays_content(keywords, trends, limits.max_pins, seo_percent)
+        if max_pins is not None:
+            briefs = briefs[:max(0, max_pins)]
         logger.info(f"Decision complete: {len(briefs)} content briefs to create")
 
         report.briefs_created = len(briefs)
@@ -144,9 +149,21 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
             return
 
         logger.info("Step 4: Generate and Post")
-        peak_hours = config.get("schedule", {}).get("peak_hours", [10, 14, 18, 20])
-        tz_name = config.get("schedule", {}).get("timezone", "US/Eastern")
-        scheduled_times = distribute_posting_times(len(briefs), peak_hours, tz_name)
+        schedule_cfg = config.get("schedule", {})
+        posting_cfg = get_posting_config(config)
+        peak_hours = schedule_cfg.get("peak_hours", [10, 14, 18, 20])
+        tz_name = schedule_cfg.get("timezone", "US/Eastern")
+        scheduled_times = distribute_posting_times(
+            len(briefs),
+            peak_hours,
+            tz_name,
+            schedule_cfg.get("interval_min_minutes", 15),
+            schedule_cfg.get("interval_max_minutes", 45),
+        )
+        schedule_mode = posting_cfg.get("schedule_mode", "scheduled")
+        if schedule_mode not in {"scheduled", "immediate"}:
+            logger.warning("Invalid posting.schedule_mode '%s'. Falling back to scheduled.", schedule_mode)
+            schedule_mode = "scheduled"
 
         # Track successfully posted pins for shadowban checking
         posted_pins: list[tuple[int, str]] = []  # (pin_id, pin_title)
@@ -156,13 +173,24 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
                 logger.warning("Daily limits reached. Stopping.")
                 break
 
-            if not safety.check_hourly_limits():
+            if not safety.check_hourly_limits() and not force:
                 logger.warning("Hourly limits reached. Waiting...")
                 await asyncio.sleep(60)
                 continue
 
             try:
                 logger.info(f"Processing brief {i+1}/{len(briefs)}: {brief.target_keyword}")
+
+                metadata = await generate_metadata(brief, config)
+                logger.info(f"Metadata generated: {metadata.title}")
+
+                image_prompt = f"No people, no person, no woman, no female, no face, no humans. Pinterest pin style, {brief.target_keyword}, professional photography, 2:3 vertical, clean composition"
+                aligned = await check_alignment(brief, metadata, image_prompt, config)
+
+                if not aligned:
+                    logger.warning(f"Quality gate failed for '{brief.target_keyword}'. Skipping.")
+                    db.log_action("quality_gate_failed", {"keyword": brief.target_keyword})
+                    continue
 
                 image_path, image_hash = await generate_image(brief, config)
                 logger.info(f"Image generated: {image_path}")
@@ -175,17 +203,6 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
                 if db.hash_exists(image_hash):
                     logger.warning(f"Still duplicate hash for '{brief.target_keyword}'. Skipping.")
                     db.log_action("duplicate_image", {"keyword": brief.target_keyword, "hash": image_hash})
-                    continue
-
-                metadata = await generate_metadata(brief, config)
-                logger.info(f"Metadata generated: {metadata.title}")
-
-                image_prompt = f"No people, no person, no woman, no female, no face, no humans. Pinterest pin style, {brief.target_keyword}, professional photography, 2:3 vertical, clean composition"
-                aligned = await check_alignment(brief, metadata, image_prompt)
-
-                if not aligned:
-                    logger.warning(f"Quality gate failed for '{brief.target_keyword}'. Skipping.")
-                    db.log_action("quality_gate_failed", {"keyword": brief.target_keyword})
                     continue
 
                 scheduled_dt = scheduled_times[i] if i < len(scheduled_times) else None
@@ -210,45 +227,29 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
                 link_mode = metadata.destination_link_mode
                 dest_link = metadata.default_destination_link if link_mode in ("destination_link", "both") else ""
 
-                pin_url = await pinterest_client.post_pin(image_path, metadata, board_name, dest_link)
-
-                if pin_url and pin_url != "":
-                    if "/pin/" in pin_url and "pin-creation-tool" not in pin_url:
-                        db.update_pin_posted(pin_id, "posted", pin_url, "post", {"pin_id": pin_id, "url": pin_url})
-                        logger.info(f"Pin {pin_id} posted: {pin_url}")
-                        posted_pins.append((pin_id, metadata.title))
-                        report.pins_posted += 1
-                        report.posted_pins.append({
-                            "id": pin_id,
-                            "keyword": brief.target_keyword,
-                            "title": metadata.title,
-                            "board": board_name,
-                            "status": "posted",
-                            "url": pin_url,
-                        })
-                    elif pin_url == "posted_unknown":
-                        db.update_pin_posted(pin_id, "posted", None, "post_unknown", {"pin_id": pin_id, "note": "Pin likely posted but URL could not be determined"})
-                        logger.warning(f"Pin {pin_id} posted (URL unknown)")
-                        posted_pins.append((pin_id, metadata.title))
-                        report.pins_posted += 1
-                        report.posted_pins.append({
-                            "id": pin_id,
-                            "keyword": brief.target_keyword,
-                            "title": metadata.title,
-                            "board": board_name,
-                            "status": "posted",
-                            "url": "",
-                        })
-                    else:
-                        db.update_pin_posted(pin_id, "failed", None, "post_failed", {"pin_id": pin_id, "url": pin_url})
-                        logger.warning(f"Pin {pin_id} failed to post — unexpected URL: {pin_url}")
-                        report.pins_failed += 1
-                        report.errors.append(f"Pin {pin_id} failed with unexpected URL: {pin_url}")
+                if force:
+                    logger.info("Force mode enabled. Posting pin %s immediately.", pin_id)
+                elif schedule_mode == "immediate":
+                    logger.info("Immediate posting mode enabled. Posting pin %s now.", pin_id)
                 else:
-                    db.update_pin_posted(pin_id, "failed", None, "post_failed", {"pin_id": pin_id})
-                    logger.warning(f"Pin {pin_id} failed to post")
-                    report.pins_failed += 1
-                    report.errors.append(f"Pin {pin_id} failed to post (no URL returned)")
+                    await wait_until_scheduled(scheduled_dt)
+
+                post_result = await pinterest_client.post_pin(image_path, metadata, board_name, dest_link)
+                actual_posted_at = datetime.now(tz.utc)
+
+                posted = _record_post_result(
+                    db=db,
+                    report=report,
+                    pin_id=pin_id,
+                    post_result=post_result,
+                    keyword=brief.target_keyword,
+                    title=metadata.title,
+                    board_name=board_name,
+                    scheduled_dt=scheduled_dt,
+                    actual_posted_at=actual_posted_at,
+                )
+                if posted:
+                    posted_pins.append((pin_id, metadata.title))
 
                 await asyncio.sleep(5)
 
@@ -333,26 +334,197 @@ async def run_daily_cycle(db: Database, config: dict, force: bool = False) -> No
     logger.info("=== Daily cycle complete ===")
 
 
-def start_scheduler(config: dict) -> None:
-    """Start APScheduler with the daily cycle."""
-    scheduler = BackgroundScheduler(timezone=config.get("schedule", {}).get("timezone", "UTC"))
+async def retry_posting_pin(db: Database, config: dict, pin_id: int) -> PostPinResult:
+    """Retry posting one existing generated pin without regenerating metadata or image."""
+    pin = db.get_pin(pin_id)
+    if not pin:
+        raise ValueError(f"Pin {pin_id} not found")
+
+    if not pin.image_path or not Path(pin.image_path).exists():
+        raise ValueError(f"Pin {pin_id} image does not exist: {pin.image_path}")
+
+    metadata = PinMetadata(
+        title=pin.title,
+        description=pin.description,
+        alt_text=pin.alt_text,
+        suggested_board=pin.board_name,
+    )
+    posting_cfg = get_posting_config(config)
+    link_mode = posting_cfg.get("destination_link_mode", "none")
+    metadata.destination_link_mode = link_mode
+    metadata.default_destination_link = posting_cfg.get("default_destination_link", "")
+    destination_link = metadata.default_destination_link if link_mode in ("destination_link", "both") else ""
+
+    report = CycleReport(datetime.now(tz.utc))
+    report.briefs_created = 1
+    report.images_generated = 0
+    report.destination_link_mode = link_mode
+    report.destination_link = metadata.default_destination_link
+
+    pinterest_client = PinterestClient(config, db=db)
+    try:
+        if not await pinterest_client.login():
+            raise RuntimeError("Pinterest login failed")
+        report.account_type = await pinterest_client.detect_account_type()
+        post_result = await pinterest_client.post_pin(
+            pin.image_path,
+            metadata,
+            pin.board_name or metadata.suggested_board,
+            destination_link,
+        )
+        _record_post_result(
+            db=db,
+            report=report,
+            pin_id=pin_id,
+            post_result=post_result,
+            keyword=pin.target_keyword,
+            title=pin.title,
+            board_name=pin.board_name,
+            scheduled_dt=pin.scheduled_at,
+            actual_posted_at=datetime.now(tz.utc),
+        )
+        return post_result
+    finally:
+        report.finish()
+        try:
+            report.print_summary()
+            report.print_file_report()
+        except Exception as e:
+            logger.warning("Failed to generate retry report: %s", e, exc_info=True)
+        await pinterest_client.close()
+
+
+def _record_post_result(
+    db: Database,
+    report: CycleReport,
+    pin_id: int,
+    post_result: PostPinResult,
+    keyword: str,
+    title: str,
+    board_name: str,
+    scheduled_dt,
+    actual_posted_at: datetime,
+) -> bool:
+    reported_board = post_result.selected_board or board_name
+
+    if post_result.status == "posted" and post_result.verified and post_result.url:
+        if "/pin/" in post_result.url and "pin-creation-tool" not in post_result.url:
+            db.update_pin_posted(
+                pin_id,
+                "posted",
+                post_result.url,
+                "post",
+                {
+                    "pin_id": pin_id,
+                    "url": post_result.url,
+                    "verified": True,
+                    "source": post_result.source,
+                    "board": reported_board,
+                },
+            )
+            logger.info("Pin %s posted and verified: %s", pin_id, post_result.url)
+            report.pins_posted += 1
+            report.posted_pins.append({
+                "id": pin_id,
+                "keyword": keyword,
+                "title": title,
+                "board": reported_board,
+                "status": "posted",
+                "url": post_result.url,
+                "verified": True,
+                "verification_source": post_result.source,
+                "scheduled_at": scheduled_dt,
+                "posted_at": actual_posted_at,
+            })
+            return True
+
+        db.update_pin_posted(
+            pin_id,
+            "failed",
+            None,
+            "post_failed",
+            {"pin_id": pin_id, "url": post_result.url, "message": "unexpected verified URL shape"},
+        )
+        logger.warning("Pin %s failed to post - unexpected URL: %s", pin_id, post_result.url)
+        report.pins_failed += 1
+        report.errors.append(f"Pin {pin_id} failed with unexpected URL: {post_result.url}")
+        return False
+
+    if post_result.status == "unverified":
+        db.update_pin_posted(
+            pin_id,
+            "unverified",
+            post_result.url or None,
+            "post_unverified",
+            {
+                "pin_id": pin_id,
+                "url": post_result.url,
+                "message": post_result.message,
+                "source": post_result.source,
+                "board": reported_board,
+                "artifacts": post_result.artifacts,
+            },
+        )
+        logger.warning("Pin %s unverified: %s", pin_id, post_result.message)
+        report.pins_unverified += 1
+        report.posted_pins.append({
+            "id": pin_id,
+            "keyword": keyword,
+            "title": title,
+            "board": reported_board,
+            "status": "unverified",
+            "url": post_result.url,
+            "verified": False,
+            "verification_source": post_result.source,
+            "message": post_result.message,
+            "artifacts": post_result.artifacts,
+            "scheduled_at": scheduled_dt,
+            "posted_at": None,
+        })
+        report.warnings.append(f"Pin {pin_id} unverified: {post_result.message}")
+        return False
+
+    db.update_pin_posted(
+        pin_id,
+        "failed",
+        post_result.url or None,
+        "post_failed",
+        {
+            "pin_id": pin_id,
+            "url": post_result.url,
+            "message": post_result.message,
+            "source": post_result.source,
+            "board": reported_board,
+            "artifacts": post_result.artifacts,
+        },
+    )
+    logger.warning("Pin %s failed to post: %s", pin_id, post_result.message)
+    report.pins_failed += 1
+    report.errors.append(f"Pin {pin_id} failed to post: {post_result.message or 'no verified URL returned'}")
+    return False
+
+
+def _run_daily_cycle_job(config: dict) -> None:
+    """Run one scheduled cycle with explicit asyncio event loop ownership."""
     db = Database(config["paths"]["database"])
     db.initialize()
+    asyncio.run(run_daily_cycle(db, config))
 
+
+def start_scheduler(config: dict) -> None:
+    """Start APScheduler with the daily cycle."""
+    scheduler = BlockingScheduler(timezone=config.get("schedule", {}).get("timezone", "UTC"))
     start_hour = config.get("schedule", {}).get("start_hour", 8)
     scheduler.add_job(
-        run_daily_cycle, 'cron', hour=start_hour, minute=0,
-        args=[db, config],
+        _run_daily_cycle_job, 'cron', hour=start_hour, minute=0,
+        args=[config],
         id='daily_cycle',
         name='Daily Pinterest Growth Cycle'
     )
 
-    scheduler.start()
     logger.info(f"Scheduler started. Daily cycle runs at {start_hour:02d}:00.")
-
     try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
         logger.info("Shutting down scheduler...")
         scheduler.shutdown()

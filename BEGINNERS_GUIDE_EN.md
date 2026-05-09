@@ -7,6 +7,7 @@
 ## What Is This Tool?
 
 Pinterest Growth Agent (PGA) is an AI-powered bot that automatically:
+
 - Finds what people are searching for on Pinterest
 - Creates beautiful pin images using AI
 - Writes SEO-optimized titles and descriptions
@@ -22,15 +23,16 @@ Think of it as having a 24/7 Pinterest assistant that never sleeps.
 ### What You'll Need
 
 | Requirement | What It Is | Where to Get It |
-|---|---|---|
+| --- | --- | --- |
 | Python 3.11+ | The programming language the tool runs on | [python.org](https://www.python.org/downloads/) |
 | A Pinterest account | Your Pinterest profile | [pinterest.com](https://www.pinterest.com) |
-| A Groq API key | Free AI key for generating text | [console.groq.com](https://console.groq.com) (free, no credit card) |
+| A DeepSeek API key | Cost-optimized AI key for titles, descriptions, and checks | [platform.deepseek.com](https://platform.deepseek.com) |
+| An OpenAI API key | AI image generation key for the default image provider | [platform.openai.com](https://platform.openai.com) |
 
 ### Supported Operating Systems
 
 - **Windows 10/11** — Full support, all batch files work as-is
-- **macOS / Linux** — Use the manual commands in the README instead of batch files
+- **macOS / Linux** — Use the matching `.sh` files or the manual commands in the README
 
 ---
 
@@ -45,6 +47,7 @@ Download the project folder to your computer and extract it if it came as a ZIP 
 Double-click **`01-install.bat`**
 
 This will automatically:
+
 - Create a Python virtual environment (keeps things organized)
 - Install all required Python packages
 - Install the Chromium browser (used for Pinterest automation)
@@ -52,14 +55,18 @@ This will automatically:
 
 The setup window will tell you when it's complete. It takes about 3-5 minutes on a fast connection.
 
-### Step 3: Get Your Free Groq API Key
+### Step 3: Get Your AI API Keys
 
-1. Open [console.groq.com](https://console.groq.com) in your browser
-2. Sign up for a free account (or log in)
-3. Click **"API Keys"** in the sidebar
-4. Click **"Create API Key"**
-5. Give it any name (e.g., "Pinterest Agent")
-6. Copy the key — it looks like `gsk_xxxxxxxxxxxxxxxxxxxxxx`
+The current default setup uses:
+
+- **DeepSeek** for text, metadata, quality checks, and self-healing
+- **OpenAI Images** for generated pin images
+
+1. Open [platform.deepseek.com](https://platform.deepseek.com), create an API key, and copy it.
+2. Open [platform.openai.com](https://platform.openai.com), create an API key, and copy it.
+3. Keep both keys ready for the `.env` file.
+
+Groq is still supported as an optional text provider, but it is no longer the default in `config.yaml`.
 
 ### Step 4: Fill In Your `.env` File
 
@@ -70,8 +77,14 @@ The setup wizard opened Notepad with your `.env` file. It should look like this:
 PINTEREST_EMAIL=your_pinterest_email@example.com
 PINTEREST_PASSWORD=your_pinterest_password
 
-# Groq API (free at console.groq.com)
-GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxx
+# Text AI provider
+DEEPSEEK_API_KEY=your_deepseek_key_here
+
+# OpenAI Images provider
+OPENAI_API_KEY=your_openai_key_here
+
+# Optional text provider fallback
+GROQ_API_KEY=
 
 # Image generation fallback (optional — leave blank for now)
 TOGETHER_API_KEY=
@@ -79,11 +92,13 @@ HF_API_KEY=
 ```
 
 Fill in:
+
 - `PINTEREST_EMAIL` — the email you use to log into Pinterest
 - `PINTEREST_PASSWORD` — your Pinterest password
-- `GROQ_API_KEY` — paste your key from Step 3
+- `DEEPSEEK_API_KEY` — paste your DeepSeek key from Step 3
+- `OPENAI_API_KEY` — paste your OpenAI key from Step 3
 
-**Important:** You can leave `TOGETHER_API_KEY` and `HF_API_KEY` blank. These are backup image providers and are not required.
+**Important:** OpenAI image generation is a paid API. For live testing, use the posting-only retry command described later when you already have a generated pin, because it does not spend image-generation credits.
 
 Save the file and close Notepad.
 
@@ -123,6 +138,7 @@ niche:
 Double-click **`02-validate.bat`**
 
 This checks:
+
 - Python is installed correctly
 - All packages are installed
 - Your Chromium browser is ready
@@ -137,12 +153,14 @@ Double-click **`03-test-mode.bat`**
 > Use this instead of `04-run-once.bat` for your first test — it bypasses safety limits so you can see the full posting process without worrying about daily caps.
 
 This runs one complete cycle immediately so you can see what happens:
+
 1. **Research** — Scrapes Pinterest for keywords and trends
 2. **Generate** — Creates AI images and metadata
 3. **Post** — Publishes pins to your Pinterest account
 4. **Analyze** — Checks how your pins performed
 
 You'll see colored output in the window as each step completes. A detailed report appears at the end showing:
+
 - How many keywords were found
 - How many pins were posted
 - Any errors or warnings
@@ -151,18 +169,28 @@ This first run may take 5-10 minutes since it has to generate images and log int
 
 **After your first test**, use `04-run-once.bat` for normal on-demand runs — it respects safety limits.
 
+For an even safer smoke test from the command line, process only one pin:
+
+```bash
+python -m src.main run-now --force --schedule-mode immediate --max-pins 1
+```
+
 ---
 
 ## Understanding the Batch Files
 
 | File | When to Use It |
-|---|---|
+| --- | --- |
 | **`01-install.bat`** | Run once when you first download the project |
 | **`02-validate.bat`** | Run before each session to make sure everything is working |
 | **`04-run-once.bat`** | Normal on-demand cycle — respects safety limits |
 | **`03-test-mode.bat`** | **Full force test** — bypasses limits for testing and debugging |
 | **`06-start-scheduler.bat`** | Start the daily scheduler (runs in background, use this for continuous posting) |
 | **`05-status.bat`** | Check your stats — keywords, pins posted, engagement |
+| **`07-run-headless.bat`** | Run one on-demand cycle without opening a browser window |
+| **`08-run-gui.bat`** | Run one on-demand cycle with a visible browser window |
+
+On macOS or Linux, use the matching `.sh` files, such as `./04-run-once.sh` or `./07-run-headless.sh`.
 
 ---
 
@@ -171,6 +199,7 @@ This first run may take 5-10 minutes since it has to generate images and log int
 When you run `06-start-scheduler.bat`, the agent starts a background scheduler that runs once per day at the hour specified in `config.yaml`.
 
 **Default schedule** (in `config.yaml`):
+
 ```yaml
 schedule:
   start_hour: 8        # Runs at 8:00 AM (your local time, see timezone below)
@@ -178,10 +207,43 @@ schedule:
   timezone: "US/Eastern"
 ```
 
+The scheduler now waits until each generated pin's scheduled posting time. If you want a manual run to post immediately, use `04-run-once.bat` or run:
+
+```bash
+python -m src.main run-now --schedule-mode immediate
+```
+
+To retry a pin that already has an image and metadata in the local database:
+
+```bash
+python -m src.main retry-post <pin_id> --browser-mode gui
+python -m src.main retry-post <pin_id> --browser-mode headless
+```
+
+This is useful for testing posting fixes without regenerating images or spending extra OpenAI image calls.
+
+### GUI Mode vs Headless Mode
+
+Use GUI mode when you want to watch the browser automation or debug login issues:
+
+```yaml
+browser:
+  mode: gui
+```
+
+Use headless mode when the agent is running unattended or on a server:
+
+```yaml
+browser:
+  mode: headless
+```
+
+In GUI safe mode, the agent uses one Chromium window for login, Pinterest research, pin creation, and verification. This makes the browser easier to follow and avoids opening one window per keyword.
+
 **Account Safety Limits** — The agent limits how many pins it posts based on account age to avoid bans:
 
 | Account Age | Max Pins/Day | Max Total Actions |
-|---|---|---|
+| --- | --- | --- |
 | Days 1-7 | 1 pin | 10 |
 | Days 8-14 | 2 pins | 20 |
 | Days 15-30 | 5 pins | 40 |
@@ -203,7 +265,7 @@ These limits are applied automatically based on the `account.created_date` you s
 ### Key Terms
 
 | Term | Meaning |
-|---|---|
+| --- | --- |
 | **Keyword** | A search term the agent found on Pinterest |
 | **Content Brief** | A plan for one pin (keyword + content type) |
 | **Board** | A Pinterest board (like a folder) where pins are saved |
@@ -212,38 +274,75 @@ These limits are applied automatically based on the `account.created_date` you s
 | **Save Rate** | % of people who saved your pin to their board |
 | **Cooldown** | Safety mode — the agent stops posting temporarily |
 | **Shadowban** | When Pinterest hides your pins from search |
+| **Posted** | The pin was verified with a real Pinterest `/pin/<id>/` URL |
+| **Unverified** | Pinterest may have accepted something, but the tool could not verify a real pin URL |
+| **Failed** | A required posting step failed before verification |
+
+### Posting Verification
+
+The agent now verifies posting before it counts a pin as successful. It only marks a pin as `posted` when it captures and verifies a real URL like:
+
+```text
+https://www.pinterest.com/pin/123456789/
+```
+
+If verification fails, the report will show `unverified` or `failed`, not a fake success. Debug files are saved in:
+
+```text
+data/post_debug/
+```
+
+Those folders can contain screenshots, HTML snapshots, and network logs that show where the Pinterest flow stopped.
 
 ---
 
 ## Troubleshooting
 
 ### "Python not found" during setup
+
 - Install Python 3.11+ from [python.org](https://www.python.org/downloads/)
 - Make sure to check "Add Python to PATH" during installation
 - Restart your computer after installing Python
 
-### "GROQ_API_KEY not set" error
+### "DEEPSEEK_API_KEY not set" or "OPENAI_API_KEY not set" error
+
 - Open `.env` in Notepad
 - Make sure you pasted your key correctly (no extra spaces)
-- The key should start with `gsk_`
+- Make sure the provider selected in `config.yaml` has a matching key in `.env`
+
+### "GROQ_API_KEY not set" error
+
+- Groq is optional unless you set `ai.text_provider: "groq"` in `config.yaml`
+- If you use Groq, paste your Groq key into `.env`
 
 ### Pin posted but I can't see it on Pinterest
+
 - Wait 5 minutes — Pinterest can be slow to update
 - Try refreshing your Pinterest profile
 - Check if the pin was saved to a different board than expected
 - Run `05-status.bat` to see the logged URL
+- If the report says `unverified`, open the matching folder in `data/post_debug/` to inspect screenshots and the saved HTML
 
 ### Agent stopped or crashed
+
 - Check the error message at the bottom of the window
 - Most errors are temporary (internet hiccup, Pinterest is busy)
 - Just run `04-run-once.bat` again to continue
 
 ### "Session not valid" / Login failed
+
 - Delete `data/pinterest_session.json` and run again
 - Make sure your Pinterest email and password are correct in `.env`
 - Pinterest may require email verification on first login from a new device
 
+### Board selection failed
+
+- Make sure the Pinterest board exists in your account
+- If the suggested board does not exist, the agent can choose an available fallback board
+- The cycle report shows the detected account type: `personal`, `business`, or `unknown`
+
 ### Too many failures in validate.bat
+
 - Make sure you ran `01-install.bat` successfully
 - Try running `01-install.bat` again
 - Check that your internet connection is working
@@ -264,6 +363,12 @@ A: Yes — the agent runs on your computer. If you close the window, the schedul
 **Q: Can I use my own ComfyUI for image generation?**
 A: Yes! Set `comfyui.enabled: true` in `config.yaml` and fill in the `host`, `port`, and `model` settings. ComfyUI must be running locally for this to work.
 
+**Q: How can I test posting without paying for another image?**
+A: Use `python -m src.main retry-post <pin_id> --browser-mode gui` or `--browser-mode headless`. It reuses an existing generated image and metadata.
+
+**Q: Does it work with Pinterest business accounts?**
+A: Yes. The tool detects account type after login and supports the current business-account pin builder and board selector. Reports include the detected account type.
+
 **Q: Can I change the posting schedule?**
 A: Yes — edit `config.yaml`. Change `peak_hours` to the hours you want pins posted, and `timezone` to your local timezone.
 
@@ -280,7 +385,7 @@ A: The agent tracks which keywords have been used and prioritizes fresh keywords
 
 ## Files and Folders
 
-```
+```markdown
 pinterest-growth-agent/
 ├── 01-install.bat           ← Run this FIRST
 ├── 02-validate.bat         ← Check setup before running
@@ -288,13 +393,19 @@ pinterest-growth-agent/
 ├── 04-run-once.bat         ← Normal on-demand cycle
 ├── 05-status.bat           ← View stats
 ├── 06-start-scheduler.bat  ← Start daily scheduler
+├── 07-run-headless.bat     ← Run once without showing a browser
+├── 08-run-gui.bat          ← Run once with a visible browser
 ├── config.yaml             ← Your settings (edit this!)
 ├── .env                    ← Your API keys (created by setup)
 ├── .env.example            ← Template for .env
 ├── data/                   ← Database and session files (auto-created)
+│   ├── cycle_report.log     ← Latest cycle report
+│   └── post_debug/          ← Screenshots/HTML/network logs for posting failures
 ├── assets/                 ← Generated images (auto-created)
 ├── src/                    ← The actual agent code (don't edit)
 ├── BEGINNERS_GUIDE_EN.md   ← You are here!
+├── BEGINNERS_GUIDE_AR.md   ← Arabic beginner guide
+├── BEGINNERS_GUIDE_FR.md   ← French beginner guide
 └── README.md               ← Technical documentation
 ```
 

@@ -25,12 +25,13 @@ Considérez-le comme un assistant Pinterest disponible 24h/24 et 7j/7 qui ne dor
 |---|---|---|
 | Python 3.11+ | Le langage de programmation utilisé par l'outil | [python.org](https://www.python.org/downloads/) |
 | Un compte Pinterest | Votre profil Pinterest | [pinterest.com](https://www.pinterest.com) |
-| Une clé API Groq | Clé d'IA gratuite pour générer du texte | [console.groq.com](https://console.groq.com) (Gratuit, sans carte bancaire) |
+| Une clé API DeepSeek | Clé IA économique pour les titres, descriptions et contrôles qualité | [platform.deepseek.com](https://platform.deepseek.com) |
+| Une clé API OpenAI | Clé pour le fournisseur d'images par défaut | [platform.openai.com](https://platform.openai.com) |
 
 ### Systèmes d'exploitation pris en charge
 
 - **Windows 10/11** — Support complet, tous les fichiers de script (Batch) fonctionnent directement.
-- **macOS / Linux** — Utilisez les commandes manuelles du fichier README au lieu des fichiers de script.
+- **macOS / Linux** — Utilisez les fichiers `.sh` correspondants ou les commandes manuelles du README.
 
 ---
 
@@ -52,14 +53,18 @@ Cela va automatiquement :
 
 La fenêtre de configuration vous indiquera quand l'installation est terminée. Cela prend environ 3 à 5 minutes selon votre connexion.
 
-### Étape 3 : Obtenir votre clé API Groq gratuite
+### Étape 3 : Obtenir vos clés API IA
 
-1. Ouvrez [console.groq.com](https://console.groq.com) dans votre navigateur.
-2. Créez un compte gratuit (ou connectez-vous).
-3. Cliquez sur **"API Keys"** dans la barre latérale.
-4. Cliquez sur **"Create API Key"**.
-5. Donnez-lui un nom (par exemple, "Pinterest Agent").
-6. Copiez la clé — elle ressemble à `gsk_xxxxxxxxxxxxxxxxxxxxxx`.
+La configuration par défaut actuelle utilise :
+
+- **DeepSeek** pour les textes, les métadonnées, le contrôle qualité et l'auto-correction.
+- **OpenAI Images** pour générer les images des épingles.
+
+1. Ouvrez [platform.deepseek.com](https://platform.deepseek.com), créez une clé API et copiez-la.
+2. Ouvrez [platform.openai.com](https://platform.openai.com), créez une clé API et copiez-la.
+3. Gardez les deux clés pour les ajouter dans le fichier `.env`.
+
+Groq reste pris en charge comme fournisseur texte optionnel, mais ce n'est plus le fournisseur par défaut dans `config.yaml`.
 
 ### Étape 4 : Remplir votre fichier `.env`
 
@@ -70,8 +75,14 @@ L'assistant de configuration a ouvert le Bloc-notes avec votre fichier `.env`. I
 PINTEREST_EMAIL=votre_email_pinterest@example.com
 PINTEREST_PASSWORD=votre_mot_de_passe_pinterest
 
-# Groq API (free at console.groq.com)
-GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxx
+# Text AI provider
+DEEPSEEK_API_KEY=your_deepseek_key_here
+
+# OpenAI Images provider
+OPENAI_API_KEY=your_openai_key_here
+
+# Optional text provider fallback
+GROQ_API_KEY=
 
 # Image generation fallback (optional — leave blank for now)
 TOGETHER_API_KEY=
@@ -81,9 +92,10 @@ HF_API_KEY=
 Remplissez :
 - `PINTEREST_EMAIL` — l'adresse e-mail que vous utilisez pour vous connecter à Pinterest.
 - `PINTEREST_PASSWORD` — votre mot de passe Pinterest.
-- `GROQ_API_KEY` — collez votre clé obtenue à l'étape 3.
+- `DEEPSEEK_API_KEY` — collez votre clé DeepSeek obtenue à l'étape 3.
+- `OPENAI_API_KEY` — collez votre clé OpenAI obtenue à l'étape 3.
 
-**Important :** Vous pouvez laisser `TOGETHER_API_KEY` et `HF_API_KEY` vides. Ce sont des fournisseurs d'images de secours qui ne sont pas nécessaires pour commencer.
+**Important :** La génération d'images OpenAI peut être payante. Pour tester uniquement la publication lorsqu'une épingle existe déjà, utilisez la commande `retry-post`, car elle ne régénère ni image ni métadonnées.
 
 Enregistrez le fichier et fermez le Bloc-notes.
 
@@ -151,6 +163,12 @@ Cette première exécution peut prendre entre 5 et 10 minutes car elle doit gén
 
 **Après votre premier test**, utilisez `04-run-once.bat` pour une utilisation quotidienne normale — il respecte les limites de sécurité.
 
+Pour un test encore plus sûr en ligne de commande, limitez l'exécution à une seule épingle :
+
+```bash
+python -m src.main run-now --force --schedule-mode immediate --max-pins 1
+```
+
 ---
 
 ## Comprendre les fichiers de script (Batch)
@@ -163,6 +181,10 @@ Cette première exécution peut prendre entre 5 et 10 minutes car elle doit gén
 | **`03-test-mode.bat`** | **Mode de test complet** — contourne les limites pour tester et déboguer. |
 | **`06-start-scheduler.bat`** | Démarrer le planificateur quotidien (tourne en arrière-plan). |
 | **`05-status.bat`** | Vérifier vos statistiques — mots-clés, épingles publiées, engagement. |
+| **`07-run-headless.bat`** | Lancer un cycle sans afficher de fenêtre de navigateur. |
+| **`08-run-gui.bat`** | Lancer un cycle avec une fenêtre de navigateur visible. |
+
+Sur macOS ou Linux, utilisez les fichiers `.sh` correspondants, par exemple `./04-run-once.sh` ou `./07-run-headless.sh`.
 
 ---
 
@@ -177,6 +199,39 @@ schedule:
   peak_hours: [10, 14, 18, 20]  # Épingles publiées à ces heures-là
   timezone: "US/Eastern"
 ```
+
+Le planificateur attend maintenant l'heure de publication calculée pour chaque épingle. Pour publier immédiatement lors d'une exécution manuelle :
+
+```bash
+python -m src.main run-now --schedule-mode immediate
+```
+
+Pour réessayer la publication d'une épingle déjà présente dans la base de données locale :
+
+```bash
+python -m src.main retry-post <pin_id> --browser-mode gui
+python -m src.main retry-post <pin_id> --browser-mode headless
+```
+
+C'est utile pour tester les corrections de publication sans régénérer d'image ni consommer d'appels OpenAI Images supplémentaires.
+
+### Mode GUI et mode headless
+
+Utilisez le mode GUI lorsque vous voulez observer l'automatisation du navigateur ou déboguer une connexion :
+
+```yaml
+browser:
+  mode: gui
+```
+
+Utilisez le mode headless lorsque l'agent tourne sans surveillance ou sur un serveur :
+
+```yaml
+browser:
+  mode: headless
+```
+
+En mode GUI sécurisé, l'agent utilise une seule fenêtre Chromium pour la connexion, la recherche Pinterest, la création d'épingle et la vérification.
 
 **Limites de sécurité du compte** — L'agent limite le nombre d'épingles publiées en fonction de l'ancienneté du compte pour éviter les suspensions :
 
@@ -212,6 +267,25 @@ Ces limites s'appliquent automatiquement en fonction de la date `account.created
 | **Save Rate** | Taux d'enregistrement — % de personnes ayant enregistré l'épingle. |
 | **Cooldown** | Mode de pause — l'agent s'arrête temporairement de publier par sécurité. |
 | **Shadowban** | Suspension masquée — lorsque Pinterest masque vos épingles des recherches. |
+| **Posted** | L'épingle a été vérifiée avec une vraie URL Pinterest `/pin/<id>/`. |
+| **Unverified** | Pinterest a peut-être avancé dans le flux, mais aucune vraie URL n'a été vérifiée. |
+| **Failed** | Une étape obligatoire a échoué avant la vérification. |
+
+### Vérification de publication
+
+L'agent ne compte une publication comme réussie que lorsqu'il capture et vérifie une vraie URL comme :
+
+```text
+https://www.pinterest.com/pin/123456789/
+```
+
+Si la vérification échoue, le rapport indiquera `unverified` ou `failed`, pas un faux succès. Les fichiers de diagnostic sont enregistrés dans :
+
+```text
+data/post_debug/
+```
+
+Ces dossiers peuvent contenir des captures d'écran, une copie HTML de la page et des journaux réseau montrant où le flux Pinterest s'est arrêté.
 
 ---
 
@@ -222,16 +296,21 @@ Ces limites s'appliquent automatiquement en fonction de la date `account.created
 - Assurez-vous de cocher "Add Python to PATH" lors de l'installation.
 - Redémarrez votre ordinateur après l'installation.
 
-### Erreur "GROQ_API_KEY not set"
+### Erreur "DEEPSEEK_API_KEY not set" ou "OPENAI_API_KEY not set"
 - Ouvrez `.env` dans le Bloc-notes.
 - Assurez-vous d'avoir collé votre clé correctement (sans espace supplémentaire).
-- La clé doit commencer par `gsk_`.
+- Vérifiez que le fournisseur choisi dans `config.yaml` possède une clé correspondante dans `.env`.
+
+### Erreur "GROQ_API_KEY not set"
+- Groq est optionnel sauf si vous définissez `ai.text_provider: "groq"` dans `config.yaml`.
+- Si vous utilisez Groq, ajoutez sa clé dans `.env`.
 
 ### Épingle publiée mais invisible sur Pinterest
 - Attendez 5 minutes — Pinterest peut être lent à se mettre à jour.
 - Essayez d'actualiser votre profil Pinterest.
 - Vérifiez si l'épingle a été enregistrée dans un tableau différent de celui prévu.
 - Lancez `05-status.bat` pour voir l'URL enregistrée.
+- Si le rapport indique `unverified`, ouvrez le dossier correspondant dans `data/post_debug/` pour inspecter les captures et le HTML.
 
 ### L'agent s'est arrêté ou a planté
 - Vérifiez le message d'erreur en bas de la fenêtre.
@@ -242,6 +321,11 @@ Ces limites s'appliquent automatiquement en fonction de la date `account.created
 - Assurez-vous d'avoir bien exécuté `01-install.bat` avec succès.
 - Essayez de relancer `01-install.bat`.
 - Vérifiez que votre connexion Internet fonctionne.
+
+### La sélection du tableau a échoué
+- Vérifiez que le tableau existe dans votre compte Pinterest.
+- Si le tableau suggéré n'existe pas, l'agent peut choisir un tableau disponible en fallback.
+- Le rapport indique le type de compte détecté : `personal`, `business` ou `unknown`.
 
 ---
 
@@ -259,6 +343,12 @@ R : Oui — l'agent s'exécute sur votre ordinateur. Si vous fermez la fenêtre,
 **Q : Puis-je modifier le planning de publication ?**
 R : Oui — modifiez `config.yaml`. Changez `peak_hours` par les heures auxquelles vous souhaitez que vos épingles soient publiées, et `timezone` par votre fuseau horaire local.
 
+**Q : Comment tester la publication sans payer une nouvelle image ?**
+R : Utilisez `python -m src.main retry-post <pin_id> --browser-mode gui` ou `--browser-mode headless`. La commande réutilise une image et des métadonnées existantes.
+
+**Q : L'outil fonctionne-t-il avec les comptes Pinterest professionnels ?**
+R : Oui. L'agent détecte le type de compte après connexion et prend en charge l'interface actuelle des comptes professionnels. Le type de compte apparaît dans le rapport.
+
 ---
 
 ## Fichiers et dossiers
@@ -271,10 +361,13 @@ pinterest-growth-agent/
 ├── 04-run-once.bat         ← Cycle normal à la demande
 ├── 05-status.bat           ← Voir les statistiques
 ├── 06-start-scheduler.bat  ← Démarrer le planificateur quotidien
+├── 07-run-headless.bat     ← Lancer sans fenêtre de navigateur
+├── 08-run-gui.bat          ← Lancer avec une fenêtre de navigateur visible
 ├── config.yaml             ← Vos paramètres (modifiez-le !)
 ├── .env                    ← Vos clés d'API (créé automatiquement)
 ├── .env.example            ← Modèle pour le fichier .env
-├── data/                   ← Base de données et fichiers de session
+├── data/                   ← Base de données, session et rapports
+│   └── post_debug/         ← Captures, HTML et journaux réseau en cas d'échec
 ├── assets/                 ← Images générées par l'IA
 ├── src/                    ← Le code de l'agent (ne pas modifier)
 ├── BEGINNERS_GUIDE_EN.md   ← Guide du débutant en anglais

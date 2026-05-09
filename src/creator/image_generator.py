@@ -1,3 +1,4 @@
+import base64
 import httpx
 import hashlib
 import logging
@@ -20,41 +21,17 @@ def _get_negative_prompts() -> str:
 
 async def generate_image(brief: ContentBrief, config: dict, retry: bool = False) -> tuple[str, str]:
     """
-    Generate a Pinterest pin image via Pollinations.ai.
+    Generate a Pinterest pin image through the configured image provider.
     Returns (image_path, image_hash).
-    Falls back to Together AI, then Hugging Face if Pollinations is down.
+    Falls back through the remaining configured low-cost providers when possible.
     If retry=True, adds variation suffix to get a different image.
     """
     suffix = " modern clean style" if retry else ""
     negative = _get_negative_prompts()
     positive_prompt = f"Pinterest pin style, {brief.target_keyword}, professional photography, 2:3 vertical, clean composition{suffix}"
 
-    comfy_cfg = config.get("comfyui", {})
-    if comfy_cfg.get("enabled", False):
-        try:
-            logger.info("ComfyUI enabled, trying local generation first...")
-            image_bytes = await _comfyui_fallback(positive_prompt, config, negative=negative)
-        except Exception as e:
-            logger.warning(f"ComfyUI failed: {e}. Falling back to Pollinations.ai...")
-            try:
-                image_bytes = await _pollinations_generate(positive_prompt, negative=negative)
-            except httpx.HTTPError as e2:
-                logger.warning(f"Pollinations.ai failed: {e2}. Trying Together AI fallback...")
-                try:
-                    image_bytes = await _together_fallback(positive_prompt, config, negative=negative)
-                except httpx.HTTPError:
-                    logger.warning("Together AI failed. Trying Hugging Face fallback...")
-                    image_bytes = await _huggingface_fallback(positive_prompt, config, negative=negative)
-    else:
-        try:
-            image_bytes = await _pollinations_generate(positive_prompt, negative=negative)
-        except httpx.HTTPError as e:
-            logger.warning(f"Pollinations.ai failed: {e}. Trying Together AI fallback...")
-            try:
-                image_bytes = await _together_fallback(positive_prompt, config, negative=negative)
-            except httpx.HTTPError:
-                logger.warning("Together AI failed. Trying Hugging Face fallback...")
-                image_bytes = await _huggingface_fallback(positive_prompt, config, negative=negative)
+    image_provider = config.get("ai", {}).get("image_provider", "pollinations")
+    image_bytes = await _generate_with_provider_chain(image_provider, positive_prompt, config, negative)
 
     image_hash = hashlib.sha256(image_bytes).hexdigest()
 
@@ -65,6 +42,104 @@ async def generate_image(brief: ContentBrief, config: dict, retry: bool = False)
     Path(image_path).write_bytes(image_bytes)
     logger.info(f"Generated image: {image_path}")
     return image_path, image_hash
+
+
+async def _generate_with_provider_chain(
+    image_provider: str,
+    prompt: str,
+    config: dict,
+    negative: str = "",
+) -> bytes:
+    """Generate with the selected primary provider, then fallback conservatively."""
+    provider = image_provider.lower().strip()
+
+    provider_order = {
+        "pollinations": ["pollinations", "together", "huggingface"],
+        "openai": ["openai", "pollinations", "together", "huggingface"],
+        "openai_images": ["openai", "pollinations", "together", "huggingface"],
+        "together": ["together", "pollinations", "huggingface"],
+        "huggingface": ["huggingface", "pollinations", "together"],
+        "hf": ["huggingface", "pollinations", "together"],
+        "comfyui": ["comfyui", "pollinations", "together", "huggingface"],
+    }
+    chain = provider_order.get(provider)
+    if not chain:
+        raise ValueError(
+            f"Unsupported ai.image_provider '{image_provider}'. "
+            "Use one of: pollinations, openai, openai_images, together, huggingface, comfyui."
+        )
+
+    last_error: Exception | None = None
+    for candidate in chain:
+        try:
+            if candidate == "openai":
+                logger.info("Generating image with OpenAI Images...")
+                return await _openai_images_generate(prompt, config)
+            if candidate == "pollinations":
+                logger.info("Generating image with Pollinations.ai...")
+                return await _pollinations_generate(prompt, negative=negative)
+            if candidate == "together":
+                logger.info("Generating image with Together AI...")
+                return await _together_fallback(prompt, config, negative=negative)
+            if candidate == "huggingface":
+                logger.info("Generating image with Hugging Face...")
+                return await _huggingface_fallback(prompt, config, negative=negative)
+            if candidate == "comfyui":
+                comfy_cfg = config.get("comfyui", {})
+                if not comfy_cfg.get("enabled", False):
+                    raise ValueError("ComfyUI selected but comfyui.enabled is false")
+                logger.info("Generating image with local ComfyUI...")
+                return await _comfyui_fallback(prompt, config, negative=negative)
+        except Exception as e:
+            last_error = e
+            logger.warning("%s image generation failed: %s", candidate, e)
+
+    raise Exception(f"All image providers failed. Last error: {last_error}")
+
+
+async def _openai_images_generate(prompt: str, config: dict) -> bytes:
+    """Generate an image with OpenAI's Images API."""
+    from src.utils.config import get_openai_api_key
+
+    api_key = get_openai_api_key()
+    ai_cfg = config.get("ai", {})
+    model = ai_cfg.get("openai_image_model", "gpt-image-1")
+    size = ai_cfg.get("openai_image_size", "1024x1536")
+    quality = ai_cfg.get("openai_image_quality", "low")
+
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "n": 1,
+        "size": size,
+        "quality": quality,
+    }
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/images/generations",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    image_data = data.get("data") or []
+    if not image_data:
+        raise Exception("OpenAI image response did not include image data")
+
+    first = image_data[0]
+    if first.get("b64_json"):
+        return base64.b64decode(first["b64_json"])
+
+    image_url = first.get("url")
+    if image_url:
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+            image_response = await client.get(image_url)
+            image_response.raise_for_status()
+            return image_response.content
+
+    raise Exception("OpenAI image response did not include b64_json or url")
 
 
 async def _pollinations_generate(prompt: str, negative: str = "") -> bytes:

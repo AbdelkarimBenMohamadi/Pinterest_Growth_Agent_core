@@ -1,7 +1,7 @@
 import json
 import logging
 from playwright.async_api import Page
-from src.utils.config import get_groq_client, call_groq_with_retry
+from src.utils.config import call_text_ai_with_retry, get_text_ai_client
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ async def heal_locator(
     db=None,
 ) -> str | None:
     """
-    Uses Groq LLM to generate a Playwright CSS selector for a broken UI element
+    Uses the configured text LLM to generate a Playwright CSS selector for a broken UI element
     by analyzing the current visible interactive DOM elements.
     Checks cached selectors first if db is provided.
     """
@@ -89,9 +89,6 @@ async def heal_locator(
     if not dom_context or dom_context == "[]":
         logger.warning("Self-healing failed: No interactive elements found on the page.")
         return None
-
-    client = get_groq_client()
-    model = config.get("ai", {}).get("text_model", "llama-3.3-70b-versatile")
 
     prompt = f"""You are an expert Playwright automation engineer.
 The standard locator for "{target_description}" on Pinterest just failed.
@@ -111,8 +108,11 @@ textarea[id="pin-draft-alttext"]
 """
 
     try:
-        response_text = await call_groq_with_retry(
+        client, provider = get_text_ai_client(config)
+        model = config.get("ai", {}).get("self_healing_model") or config.get("ai", {}).get("text_model", "deepseek-v4-flash")
+        response_text = await call_text_ai_with_retry(
             client,
+            provider,
             model=model,
             messages=[
                 {"role": "system", "content": "You are a specialized code generation tool. Output ONLY the raw CSS selector string requested. No explanations."},
@@ -137,5 +137,5 @@ textarea[id="pin-draft-alttext"]
         return selector
 
     except Exception as e:
-        logger.error(f"Self-healing LLM call failed: {e}")
+        logger.warning(f"Self-healing LLM call failed: {e}")
         return None

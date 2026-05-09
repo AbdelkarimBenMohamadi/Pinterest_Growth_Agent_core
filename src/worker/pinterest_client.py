@@ -3,12 +3,12 @@ import json
 import random
 import re
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from playwright.async_api import async_playwright, BrowserContext, Page, Response
 from playwright_stealth import Stealth
-from src.models import PinMetadata, EngagementData
-from src.utils.config import get_pinterest_credentials
-from src.utils.constants import SESSION_FILE
+from src.models import PinMetadata, EngagementData, PostPinResult
+from src.utils.config import get_browser_config, get_pinterest_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,9 @@ class PinterestClient:
         self._page: Page | None = None
         self._stealth = Stealth()
         self._username: str = ""
+        self._account_type: str = "unknown"
+        browser_cfg = get_browser_config(config)
+        self._session_file = Path(browser_cfg["session_file"])
 
     async def _launch(self) -> Page:
         if self._page is not None:
@@ -32,14 +35,16 @@ class PinterestClient:
         pw_ctx = self._stealth.use_async(async_playwright())
         self._playwright = await pw_ctx.start()
 
-        headless = self.config.get("browser", {}).get("headless", False)
-        profile_path = self.config.get("browser", {}).get("chrome_profile_path")
+        browser_cfg = get_browser_config(self.config)
+        headless = browser_cfg["headless"]
+        profile_path = browser_cfg["chrome_profile_path"]
 
         if profile_path:
-            logger.info(f"Launching with persistent Chrome profile: {profile_path}")
+            profile_dir = Path(profile_path).expanduser()
+            logger.info(f"Launching in {browser_cfg['mode']} mode with persistent Chrome profile: {profile_dir}")
             # Note: launch_persistent_context returns a BrowserContext directly
             self._context = await self._playwright.chromium.launch_persistent_context(
-                user_data_dir=profile_path,
+                user_data_dir=str(profile_dir),
                 headless=headless,
                 viewport={"width": 1280, "height": 800},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -55,6 +60,7 @@ class PinterestClient:
             else:
                 self._page = await self._context.new_page()
         else:
+            logger.info("Launching browser in %s mode with managed Playwright session", browser_cfg["mode"])
             self._browser = await self._playwright.chromium.launch(
                 headless=headless,
                 args=[
@@ -64,7 +70,7 @@ class PinterestClient:
             )
 
             try:
-                storage = str(SESSION_FILE) if SESSION_FILE.exists() else None
+                storage = str(self._session_file) if self._session_file.exists() else None
 
                 self._context = await self._browser.new_context(
                     storage_state=storage,
@@ -82,11 +88,71 @@ class PinterestClient:
 
         return self._page
 
+    async def get_page(self) -> Page:
+        """Return the shared page owned by this Pinterest client."""
+        return await self._launch()
+
+    async def detect_account_type(self) -> str:
+        """Best-effort Pinterest account type detection for reporting and selector context."""
+        if self._account_type != "unknown":
+            return self._account_type
+
+        page = await self._launch()
+        try:
+            await page.goto("https://www.pinterest.com/me/", timeout=15000)
+            await self._random_delay(2, 3)
+
+            current_url = page.url.lower()
+            body_text = ""
+            try:
+                body_text = (await page.locator("body").inner_text(timeout=5000)).lower()
+            except Exception:
+                pass
+
+            business_markers = [
+                "business hub",
+                "analytics",
+                "ads manager",
+                "audience insights",
+                "business account",
+                "pinterest business",
+            ]
+            personal_markers = [
+                "created",
+                "saved",
+                "boards",
+                "pins",
+            ]
+
+            has_business_ui = False
+            try:
+                has_business_ui = await page.locator(
+                    '[data-test-id="business-account-switcher"], '
+                    'a[href*="/analytics"], '
+                    'a[href*="/business/hub"], '
+                    'a[href*="/ads"]'
+                ).count() > 0
+            except Exception:
+                pass
+
+            if "/business/" in current_url or has_business_ui or any(marker in body_text for marker in business_markers):
+                self._account_type = "business"
+            elif any(marker in body_text for marker in personal_markers):
+                self._account_type = "personal"
+            else:
+                self._account_type = "unknown"
+
+            logger.info("Detected Pinterest account type: %s", self._account_type)
+            return self._account_type
+        except Exception as e:
+            logger.warning("Could not detect Pinterest account type: %s", e)
+            return "unknown"
+
     async def _save_session(self) -> None:
         if self._context:
-            SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-            await self._context.storage_state(path=str(SESSION_FILE))
-            logger.info("Session saved to %s", SESSION_FILE)
+            self._session_file.parent.mkdir(parents=True, exist_ok=True)
+            await self._context.storage_state(path=str(self._session_file))
+            logger.info("Session saved to %s", self._session_file)
 
     async def _random_delay(self, min_s: float = 2.0, max_s: float = 5.0) -> None:
         await asyncio.sleep(random.uniform(min_s, max_s))
@@ -174,21 +240,73 @@ class PinterestClient:
 
     # ── Pin Posting ────────────────────────────────────────
 
-    async def post_pin(self, image_path: str, metadata: PinMetadata, board: str, destination_link: str = "") -> str:
+    async def post_pin(self, image_path: str, metadata: PinMetadata, board: str, destination_link: str = "") -> PostPinResult:
         page = await self._launch()
 
         pin_create_data: dict = {"pin_id": None, "pin_url": None}
         pin_create_event = asyncio.Event()
+        network_log: list[dict] = []
+        artifact_dir = self._create_post_artifact_dir(metadata.title)
+        selected_board = board
+
+        async def _finish(
+            status: str,
+            url: str = "",
+            verified: bool = False,
+            source: str = "",
+            message: str = "",
+            capture_debug: bool = False,
+        ) -> PostPinResult:
+            artifacts: list[str] = []
+            if capture_debug or status in {"unverified", "failed"}:
+                artifacts = await self._save_post_debug_artifacts(page, artifact_dir, message or status, network_log)
+            await self._save_session()
+            return PostPinResult(
+                status=status,
+                url=url,
+                verified=verified,
+                source=source,
+                message=message,
+                selected_board=selected_board,
+                artifacts=artifacts,
+            )
 
         async def _on_response(response: Response) -> None:
             url = response.url
             method = response.request.method
-            if method != "POST":
+            if method == "GET":
                 return
-            if not any(p in url.lower() for p in ["/v3/pins", "pinresource/create", "pin-builder", "/resource/pin"]):
+            url_lower = url.lower()
+            if "pinterest." not in url_lower and "pinimg." not in url_lower:
                 return
+
+            should_inspect_body = any(p in url_lower for p in [
+                "/v3/pins",
+                "pinresource/create",
+                "pin-builder",
+                "/resource/pin",
+                "pincanvasresource/create",
+                "pinpublish",
+                "publish",
+                "save",
+                "storypin",
+                "draft",
+                "board",
+                "resource",
+            ])
+
             try:
-                data = await response.json()
+                data = await response.json() if should_inspect_body else None
+                network_log.append({
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "method": method,
+                    "url": url,
+                    "status": response.status,
+                    "ok": response.ok,
+                    "body": self._short_json(data) if data is not None else None,
+                })
+                if data is None:
+                    return
                 pin_data = data
                 if isinstance(data, dict):
                     if "resource_response" in data:
@@ -203,8 +321,15 @@ class PinterestClient:
                     pin_create_data["pin_url"] = f"https://www.pinterest.com/pin/{pin_id}/"
                     pin_create_event.set()
                     logger.info(f"Intercepted pin creation response: pin_id={pin_id}")
-            except Exception:
-                pass
+            except Exception as e:
+                network_log.append({
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "method": method,
+                    "url": url,
+                    "status": response.status,
+                    "ok": response.ok,
+                    "parse_error": str(e),
+                })
 
         try:
             page.on("response", _on_response)
@@ -216,7 +341,10 @@ class PinterestClient:
             # Upload image
             file_input = page.locator('input[type="file"]')
             await file_input.set_input_files(image_path, timeout=30000)
-            await self._random_delay(4, 7)
+            upload_ready = await self._wait_for_upload_completion(page)
+            await self._capture_step_screenshot(page, artifact_dir, "after_upload")
+            if not upload_ready:
+                logger.warning("Upload completion was not explicitly confirmed; publish button checks will guard the click")
 
             # Wait for form to appear after upload
             try:
@@ -240,17 +368,36 @@ class PinterestClient:
             await self._random_delay(1, 2)
 
             # Fill alt text
-            await self._fill_alt_text(page, metadata.alt_text)
+            alt_filled = await self._fill_alt_text(page, metadata.alt_text)
+            if metadata.alt_text and not alt_filled:
+                logger.warning("Optional alt text could not be filled; continuing")
             await self._random_delay(0.5, 1)
+            await self._capture_step_screenshot(page, artifact_dir, "after_metadata")
 
             # Select board
             if board:
-                await self._select_board(page, board)
+                selected_board = await self._select_board(page, board) or ""
+                await self._capture_step_screenshot(page, artifact_dir, "after_board_selection")
+                if not selected_board:
+                    logger.error("Required board selection failed for '%s'", board)
+                    return await _finish(
+                        "failed",
+                        message=f"Required board selection failed: {board}",
+                        capture_debug=True,
+                    )
                 await self._random_delay(1, 2)
 
             # Fill destination link (clickable URL on the pin)
             if destination_link:
                 await self._fill_destination_link(page, destination_link)
+                link_ready = await self._wait_for_destination_link_ready(page)
+                if not link_ready:
+                    logger.error("Destination link validation did not finish before publish")
+                    return await _finish(
+                        "failed",
+                        message="Destination link validation did not finish before publish",
+                        capture_debug=True,
+                    )
                 await self._random_delay(1, 2)
 
             # Scroll to publish button
@@ -258,16 +405,18 @@ class PinterestClient:
             await self._random_delay(1, 2)
 
             # Click publish
-            publish_btn = page.locator(
-                'button:has-text("Publish"), button:has-text("Save"), button:has-text("نشر")'
-            ).first
-            try:
-                await publish_btn.wait_for(state="visible", timeout=10000)
-                await publish_btn.click(force=True)
-                logger.info("Clicked publish button")
-            except Exception as e:
-                logger.warning(f"Publish button click failed: {e}. Trying Ctrl+Enter...")
-                await page.keyboard.press("Control+Enter")
+            publish_btn = await self._find_enabled_publish_button(page)
+            if not publish_btn:
+                logger.error("Publish/save button was not visible and enabled")
+                return await _finish(
+                    "failed",
+                    message="Publish/save button was not visible and enabled",
+                    capture_debug=True,
+                )
+
+            await publish_btn.click(force=True)
+            logger.info("Clicked publish button")
+            await self._capture_step_screenshot(page, artifact_dir, "after_publish_click")
 
             # Wait for pin creation response from API using event (no polling race)
             try:
@@ -277,33 +426,219 @@ class PinterestClient:
 
             if pin_create_data["pin_id"]:
                 pin_url = pin_create_data["pin_url"]
-                logger.info(f"Pin posted successfully (API interception): {pin_url}")
-                await self._save_session()
-                return pin_url
+                if await self._verify_pin_url(page, pin_url):
+                    logger.info(f"Pin posted and verified (API interception): {pin_url}")
+                    return await _finish("posted", pin_url, True, "api_response", "Verified from intercepted API response")
+                logger.warning("API returned a pin URL, but verification failed: %s", pin_url)
+                return await _finish(
+                    "unverified",
+                    pin_url,
+                    False,
+                    "api_response",
+                    "Pinterest returned a pin URL, but the pin page could not be verified",
+                    capture_debug=True,
+                )
 
             # Fallback 1: Try to extract pin URL from page JS state
             pin_url = await self._extract_pin_from_page_state(page)
             if pin_url:
-                logger.info(f"Pin URL found from page state: {pin_url}")
-                await self._save_session()
-                return pin_url
+                if await self._verify_pin_url(page, pin_url):
+                    logger.info(f"Pin URL found and verified from page state: {pin_url}")
+                    return await _finish("posted", pin_url, True, "page_state", "Verified from page state URL")
+                logger.warning("Page state contained a pin URL, but verification failed: %s", pin_url)
+                return await _finish(
+                    "unverified",
+                    pin_url,
+                    False,
+                    "page_state",
+                    "A pin URL was found in page state, but the pin page could not be verified",
+                    capture_debug=True,
+                )
 
             # Fallback 2: Navigate to user's profile pins page and find the newest pin
             logger.info("API interception failed. Trying profile pins page fallback...")
             pin_url = await self._find_newest_pin_on_profile(page)
             if pin_url:
-                logger.info(f"Pin URL found from profile: {pin_url}")
-                await self._save_session()
-                return pin_url
+                if await self._verify_pin_url(page, pin_url):
+                    logger.info(f"Pin URL found and verified from profile: {pin_url}")
+                    return await _finish("posted", pin_url, True, "profile_lookup", "Verified from profile lookup")
+                logger.warning("Profile lookup found a pin URL, but verification failed: %s", pin_url)
+                return await _finish(
+                    "unverified",
+                    pin_url,
+                    False,
+                    "profile_lookup",
+                    "Profile lookup found a pin URL, but the pin page could not be verified",
+                    capture_debug=True,
+                )
 
-            # Pin may have succeeded but we couldn't detect the URL
-            logger.warning("Pin posted but URL could not be determined. Marking as 'posted_unknown'.")
-            await self._save_session()
-            return "posted_unknown"
+            outcome = await self._detect_publish_outcome(page)
+            message = outcome or "No Pinterest pin URL could be captured or verified"
+            logger.warning("Pin publish could not be verified: %s", message)
+            return await _finish("unverified", message=message, source="no_url", capture_debug=True)
 
         except Exception as e:
             logger.error(f"Failed to post pin: {e}")
+            return await _finish("failed", message=str(e), capture_debug=True)
+        finally:
+            try:
+                page.remove_listener("response", _on_response)
+            except Exception:
+                pass
+
+    def _create_post_artifact_dir(self, title: str) -> Path:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", title.lower()).strip("-")[:48] or "pin"
+        artifact_dir = Path("data/post_debug") / f"{timestamp}_{slug}"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        return artifact_dir
+
+    async def _capture_step_screenshot(self, page: Page, artifact_dir: Path, step: str) -> str:
+        path = artifact_dir / f"{step}.png"
+        try:
+            await page.screenshot(path=str(path), full_page=True)
+            return str(path)
+        except Exception as e:
+            logger.debug("Could not capture %s screenshot: %s", step, e)
             return ""
+
+    async def _save_post_debug_artifacts(
+        self,
+        page: Page,
+        artifact_dir: Path,
+        reason: str,
+        network_log: list[dict],
+    ) -> list[str]:
+        artifacts: list[str] = []
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+
+        reason_path = artifact_dir / "reason.txt"
+        reason_path.write_text(reason, encoding="utf-8")
+        artifacts.append(str(reason_path))
+
+        network_path = artifact_dir / "network.json"
+        network_path.write_text(json.dumps(network_log, indent=2), encoding="utf-8")
+        artifacts.append(str(network_path))
+
+        html_path = artifact_dir / "page.html"
+        try:
+            html_path.write_text(await page.content(), encoding="utf-8")
+            artifacts.append(str(html_path))
+        except Exception as e:
+            logger.debug("Could not capture post failure HTML: %s", e)
+
+        screenshot_path = await self._capture_step_screenshot(page, artifact_dir, "failure")
+        if screenshot_path:
+            artifacts.append(screenshot_path)
+
+        logger.info("Post debug artifacts saved in %s", artifact_dir)
+        return artifacts
+
+    def _short_json(self, data: object) -> object:
+        try:
+            text = json.dumps(data, ensure_ascii=True)
+            if len(text) <= 4000:
+                return data
+            return {"truncated": True, "body": text[:4000]}
+        except Exception:
+            return str(data)[:4000]
+
+    async def _wait_for_upload_completion(self, page: Page, timeout_s: int = 45) -> bool:
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        try:
+            await page.wait_for_load_state("networkidle", timeout=15000)
+        except Exception:
+            pass
+
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                ready = await page.evaluate("""
+                    () => {
+                        const busy = document.querySelector(
+                            '[role="progressbar"], [aria-busy="true"], [data-test-id*="spinner" i], [class*="spinner" i]'
+                        );
+                        const imagePreview = document.querySelector(
+                            'img[src^="blob:"], img[src^="data:"], [data-test-id*="media" i] img, [data-test-id*="image" i] img'
+                        );
+                        return Boolean(imagePreview) && !busy;
+                    }
+                """)
+                if ready:
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(1)
+
+        return False
+
+    async def _find_enabled_publish_button(self, page: Page):
+        selectors = [
+            'button:has-text("Publish")',
+            'button:has-text("Save")',
+            'button:has-text("Create")',
+            'button[data-test-id*="publish" i]',
+            'button[data-test-id*="save" i]',
+            'div[role="button"]:has-text("Publish")',
+            'div[role="button"]:has-text("Save")',
+            'button:has-text("نشر")',
+            'button:has-text("حفظ")',
+        ]
+
+        deadline = asyncio.get_running_loop().time() + 30
+        while asyncio.get_running_loop().time() < deadline:
+            for selector in selectors:
+                loc = page.locator(selector).first
+                try:
+                    if await loc.count() == 0 or not await loc.is_visible():
+                        continue
+                    disabled = await loc.evaluate("""
+                        el => el.disabled ||
+                            el.getAttribute('aria-disabled') === 'true' ||
+                            el.getAttribute('data-disabled') === 'true' ||
+                            getComputedStyle(el).pointerEvents === 'none'
+                    """)
+                    if not disabled:
+                        return loc
+                except Exception:
+                    continue
+            await asyncio.sleep(1)
+
+        return None
+
+    async def _detect_publish_outcome(self, page: Page) -> str:
+        try:
+            page_text = await page.locator("body").inner_text(timeout=5000)
+            lower = page_text.lower()
+            error_markers = [
+                "something went wrong",
+                "try again",
+                "couldn't publish",
+                "couldn't save",
+                "error",
+                "required",
+            ]
+            draft_markers = ["draft", "saved to drafts"]
+            success_markers = [
+                "pin published",
+                "published to",
+                "your pin was published",
+                "created your pin",
+                "pin created",
+            ]
+            if any(marker in lower for marker in error_markers):
+                return "Pinterest showed an error or required-field message after publish"
+            if any(marker in lower for marker in draft_markers):
+                return "Pinterest appears to have saved a draft instead of publishing"
+            if any(marker in lower for marker in success_markers):
+                return "Pinterest showed a success message, but no pin URL was found"
+        except Exception:
+            pass
+
+        if "/pin-creation-tool" in page.url or "/pin-builder" in page.url:
+            return "Still on the Pinterest pin creation page after publish"
+        if "/pin/" in page.url:
+            return f"Browser redirected to a pin-like URL that could not be parsed: {page.url}"
+        return f"No success, draft, error, or pin URL signal detected. Current URL: {page.url}"
 
     async def _fill_title(self, page: Page, title: str) -> bool:
         if not title:
@@ -506,42 +841,111 @@ class PinterestClient:
 
         return False
 
-    async def _select_board(self, page: Page, board: str) -> bool:
+    async def _select_board(self, page: Page, board: str) -> str | None:
         try:
             board_btn = page.locator(
-                'button[data-test-id="board-dropdown-select-button"], '
+                '[data-test-id="board-dropdown-select-button"], '
                 'div[data-test-id="board-selector"] button, '
-                'button[aria-label*="board" i]'
+                'button[aria-label*="board" i], '
+                'button:has-text("Choose board"), '
+                'button:has-text("Select board"), '
+                'div[role="button"]:has-text("Choose board"), '
+                'div[role="button"]:has-text("Select board")'
             ).first
             if await board_btn.count() > 0 and await board_btn.is_visible():
                 await board_btn.click()
                 await self._random_delay(1, 2)
 
                 # Wait for board dropdown to appear and find the matching board
-                board_option = page.locator(
-                    f'div[data-test-id="board-row"] >> text="{board}"'
-                ).first
+                board_rows = page.locator(
+                    'div[data-test-id="board-row"], '
+                    'div[data-test-id^="board-row-"], '
+                    'div[data-test-id="boardWithoutSection"] [role="button"], '
+                    'div[role="option"]'
+                )
+                board_option = board_rows.filter(has_text=board).first
                 try:
                     await board_option.wait_for(state="visible", timeout=3000)
                     await board_option.click()
                     await self._random_delay(1, 2)
-                    logger.info(f"Board '{board}' selected")
-                    return True
+                    if await self._board_selection_matches(page, board):
+                        logger.info(f"Board '{board}' selected")
+                        return board
+                    logger.warning("Clicked board '%s' but could not verify it was selected", board)
+                    return None
                 except Exception:
                     # Try typing board name in search
-                    board_search = page.locator('input[placeholder*="Search" i], input[aria-label*="Search" i]').first
+                    board_search = page.locator(
+                        'input[placeholder*="Search" i], input[aria-label*="Search" i], '
+                        'input[placeholder*="board" i], input[aria-label*="board" i]'
+                    ).first
                     if await board_search.count() > 0 and await board_search.is_visible():
                         await board_search.fill(board)
                         await self._random_delay(1, 2)
-                        first_result = page.locator('div[data-test-id="board-row"], div[role="option"]').first
+                        first_result = board_rows.filter(has_text=board).first
                         if await first_result.count() > 0 and await first_result.is_visible():
                             await first_result.click()
-                            logger.info(f"Board '{board}' selected via search")
-                            return True
+                            await self._random_delay(1, 2)
+                            if await self._board_selection_matches(page, board):
+                                logger.info(f"Board '{board}' selected via search")
+                                return board
+                            logger.warning("Clicked first board search result but could not verify '%s' was selected", board)
+                            return None
+
+                        await board_search.fill("")
+                        await self._random_delay(1, 2)
+
+                if self.config.get("posting", {}).get("allow_board_fallback", True):
+                    fallback = board_rows.first
+                    if await fallback.count() > 0 and await fallback.is_visible():
+                        fallback_text = (await fallback.inner_text()).strip()
+                        await fallback.click()
+                        await self._random_delay(1, 2)
+                        if await self._board_selection_matches(page, fallback_text):
+                            logger.warning(
+                                "Board '%s' was not found; selected fallback board '%s'",
+                                board,
+                                fallback_text,
+                            )
+                            return fallback_text
+                        logger.warning("Clicked fallback board but could not verify selection: %s", fallback_text)
         except Exception as e:
             logger.warning(f"Board selection failed: {e}")
 
-        return False
+        return None
+
+    async def _board_selection_matches(self, page: Page, board: str) -> bool:
+        try:
+            expected = board.lower().strip()
+            selected_text = await page.evaluate("""
+                () => {
+                    const candidates = [
+                        '[data-test-id="board-dropdown-select-button"]',
+                        '[data-test-id="board-selector"]',
+                        'button[aria-label*="board" i]',
+                        'button',
+                    ];
+                    for (const selector of candidates) {
+                        for (const el of document.querySelectorAll(selector)) {
+                            const text = (el.innerText || el.textContent || '').trim();
+                            if (text) {
+                                const lower = text.toLowerCase();
+                                if (!lower.includes('choose') && !lower.includes('select')) {
+                                    return text;
+                                }
+                            }
+                        }
+                    }
+                    return '';
+                }
+            """)
+            if expected and expected in str(selected_text).lower():
+                return True
+
+            body_text = await page.locator("body").inner_text(timeout=3000)
+            return expected in body_text.lower()
+        except Exception:
+            return False
 
     async def _fill_destination_link(self, page: Page, link: str) -> bool:
         """Fill the destination link (clickable URL) field on the pin builder."""
@@ -560,12 +964,57 @@ class PinterestClient:
             try:
                 if await loc.count() > 0 and await loc.is_visible():
                     await loc.fill(link)
+                    try:
+                        await loc.press("Tab")
+                    except Exception:
+                        await page.keyboard.press("Tab")
                     logger.info(f"Destination link filled: {link}")
                     return True
             except Exception:
                 continue
 
         logger.warning("Could not fill destination link field")
+        return False
+
+    async def _wait_for_destination_link_ready(self, page: Page, timeout_s: int = 45) -> bool:
+        """Wait until Pinterest is done validating the optional destination link."""
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        pending_markers = [
+            "just a moment",
+            "checking that link",
+            "checking this link",
+            "checking link",
+        ]
+        hard_error_markers = [
+            "invalid link",
+            "enter a valid",
+            "couldn't validate",
+            "can't use this link",
+        ]
+
+        first_check = asyncio.get_running_loop().time()
+        clear_since: float | None = None
+
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                body_text = (await page.locator("body").inner_text(timeout=3000)).lower()
+                if any(marker in body_text for marker in hard_error_markers):
+                    logger.warning("Pinterest reported a destination link validation error")
+                    return False
+                if any(marker in body_text for marker in pending_markers):
+                    clear_since = None
+                else:
+                    now = asyncio.get_running_loop().time()
+                    if clear_since is None:
+                        clear_since = now
+                    if now - first_check >= 5 and now - clear_since >= 3:
+                        return True
+            except Exception:
+                now = asyncio.get_running_loop().time()
+                if now - first_check >= 5:
+                    return True
+            await asyncio.sleep(1)
+
         return False
 
     async def _extract_pin_from_page_state(self, page: Page) -> str | None:
@@ -616,6 +1065,50 @@ class PinterestClient:
             logger.debug(f"Page state extraction failed: {e}")
 
         return None
+
+    async def _verify_pin_url(self, page: Page, pin_url: str) -> bool:
+        """Open a candidate pin URL and verify Pinterest serves a pin page."""
+        if not pin_url or "/pin/" not in pin_url:
+            return False
+
+        match = re.search(r"/pin/(\d+)", pin_url)
+        if not match:
+            return False
+        expected_id = match.group(1)
+
+        try:
+            await page.goto(pin_url, timeout=30000)
+            await self._random_delay(3, 5)
+            current_url = page.url
+            if expected_id not in current_url and "/pin/" not in current_url:
+                logger.warning("Pin verification landed on unexpected URL: %s", current_url)
+                return False
+
+            body_text = ""
+            try:
+                body_text = (await page.locator("body").inner_text(timeout=5000)).lower()
+            except Exception:
+                pass
+
+            negative_markers = [
+                "pin not found",
+                "page not found",
+                "couldn't find",
+                "something went wrong",
+                "log in to see",
+            ]
+            if any(marker in body_text for marker in negative_markers):
+                logger.warning("Pin verification page contained a negative marker for %s", pin_url)
+                return False
+
+            pin_link_count = await page.locator(f'a[href*="/pin/{expected_id}"]').count()
+            if pin_link_count > 0 or expected_id in current_url:
+                return True
+
+            return "/pin/" in current_url and expected_id in body_text
+        except Exception as e:
+            logger.warning("Pin URL verification failed for %s: %s", pin_url, e)
+            return False
 
     async def _find_newest_pin_on_profile(self, page: Page) -> str | None:
         """Navigate to user's pins page and find the most recently created pin."""
